@@ -31,13 +31,16 @@
   .readout { font-size: 40px; font-weight: 800; letter-spacing: 2px; min-height: 48px; }
   .sub { font-size: 13px; color: #777; font-variant-numeric: tabular-nums; }
   /* lobby: emoji + hint on top, big thumb controls pinned to the bottom. Landscape = classic platformer grip. */
-  .lobby { justify-content: flex-start; padding-top: 64px; gap: 12px; }
-  .controls { position: fixed; left: 0; right: 0; bottom: 0; height: 44vh; display: grid; grid-template-columns: 1fr 1fr 1.4fr; gap: 10px; padding: 10px; padding-bottom: max(10px, env(safe-area-inset-bottom)); background: linear-gradient(transparent, rgba(0,0,0,0.5)); }
-  .controls button { border-radius: 26px; border: 2px solid #2a2a2a; background: #1b1b1b; color: #eee; font-size: 52px; font-weight: 900; padding: 0; }
+  .lobby { justify-content: flex-start; padding-top: 64px; gap: 12px; padding-bottom: 150px; }
+  /* thumb controls: ◀ ▶ pair in the bottom-left corner, 跳 alone in the bottom-right. Nothing in the middle. */
+  .controls { position: fixed; inset: 0; pointer-events: none; --edge-x: max(18px, env(safe-area-inset-left)); --edge-y: max(22px, env(safe-area-inset-bottom)); }
+  .controls .pad { position: absolute; left: var(--edge-x); bottom: var(--edge-y); display: flex; gap: 14px; pointer-events: auto; }
+  .controls .jump { position: absolute; right: var(--edge-x); bottom: var(--edge-y); width: 112px; height: 112px; border-radius: 50%; pointer-events: auto; font-size: 34px; }
+  .controls .mv { width: 92px; height: 92px; border-radius: 50%; font-size: 34px; }
+  .controls button { border: 2px solid #2a2a2a; background: #1b1b1b; color: #eee; font-weight: 900; padding: 0; box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
   .controls button.down, .controls button:active { background: #333; border-color: #555; }
-  .controls .mv[data-dir="-1"] { order: 1; } .controls .mv[data-dir="1"] { order: 2; } .controls .jump { order: 3; }
-  .controls.swap { grid-template-columns: 1.4fr 1fr 1fr; }
-  .controls.swap .jump { order: 0; }
+  .controls.swap .pad { left: auto; right: var(--edge-x); }
+  .controls.swap .jump { right: auto; left: var(--edge-x); }
   .jump { background: var(--accent) !important; color: #000 !important; border-color: var(--accent) !important; letter-spacing: 4px; }
   .jump.down, .jump:active { filter: brightness(0.8); }
   .zone { color: #ffd740; font-weight: 700; }
@@ -48,9 +51,9 @@
     .lobby p { font-size: 13px; }
     .emoji { grid-template-columns: repeat(8, 1fr); max-width: 560px; gap: 6px; }
     .emoji button { height: 40px; font-size: 22px; border-radius: 10px; }
-    .controls { height: 62vh; grid-template-columns: 1fr 1fr 1.2fr; gap: 14px; padding: 0 max(14px, env(safe-area-inset-left)) 14px max(14px, env(safe-area-inset-right)); }
-    .controls.swap { grid-template-columns: 1.2fr 1fr 1fr; }
-    .controls button { font-size: 60px; }
+    .controls { --edge-x: max(24px, env(safe-area-inset-left)); --edge-y: max(18px, env(safe-area-inset-bottom)); }
+    .controls .mv { width: 100px; height: 100px; }
+    .controls .jump { width: 120px; height: 120px; }
     #swap { position: fixed; top: max(10px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 6; padding: 6px 12px; font-size: 12px; }
   }
   .emoji button:active, .emoji button.pop { transform: scale(0.85); background: var(--accent); }
@@ -84,7 +87,7 @@
   @keyframes fade { 0% { opacity: 1; } 100% { opacity: 0; } }
 
   /* keyboard simulator (PC testing with ?sim) */
-  #sim { position: fixed; left: 8px; right: 8px; bottom: 8px; background: rgba(0,0,0,0.75); border: 1px solid #333; border-radius: 10px; padding: 8px 10px; font-size: 12px; color: #aaa; z-index: 9; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  #sim { position: fixed; left: 8px; right: 8px; top: 44px; background: rgba(0,0,0,0.75); border: 1px solid #333; border-radius: 10px; padding: 8px 10px; font-size: 12px; color: #aaa; z-index: 9; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   #sim b { color: #fff; }
   #sim .k { padding: 2px 6px; border: 1px solid #555; border-radius: 4px; color: #fff; }
 </style>
@@ -114,8 +117,10 @@
   <button id="calib" class="small hidden">重新校正</button>
 </div>
 <div id="controls" class="controls hidden">
-  <button class="mv" data-dir="-1">◀</button>
-  <button class="mv" data-dir="1">▶</button>
+  <div class="pad">
+    <button class="mv" data-dir="-1">◀</button>
+    <button class="mv" data-dir="1">▶</button>
+  </div>
   <button id="jump" class="jump">跳</button>
 </div>
 
