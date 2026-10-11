@@ -48,9 +48,14 @@ module.exports = {
     RADIUS: 6, MIN_RADIUS: 2.2, BODY_R: 0.55,
     ACCEL: 30, DAMPING: 4, MAX_SPEED: 7,     // MAX_SPEED caps steering only; knock-back decays through DAMPING
     DASH_SPEED: 17, DASH_MS: 220, DASH_COOLDOWN_MS: 1400,
-    BOUNCE: 1.2,          // 1.0 = fully elastic exchange along the collision normal; >1 = extra bounce
-    BUMP_BONUS: 1.5,      // every collision adds at least this much separation speed, so even slow bumps shove
-    SHOVE: 13,            // extra push a dashing body gives the one it hits
+    // Collisions are inelastic, and "weight" grows with how fast you are driving into the contact, so the one who
+    // charges wins the exchange smoothly: a standing target flies, equal head-on speeds bounce symmetrically,
+    // and a dash is heavier still. mass = 1 + SPEED_MASS * approachSpeed, times DASH_MASS while dashing.
+    RESTITUTION: 0.35,    // 0 = stick together, 1 = fully elastic
+    SPEED_MASS: 0.35,     // extra mass per unit of approach speed (max steering speed 7 -> about 3.5x)
+    DASH_MASS: 3,         // multiplier while dashing
+    SHOVE: 8,             // extra push the victim gets when hit by a dash
+    BUMP_BONUS: 0.8,      // small extra push for the lighter side on every hit, so slow nudges still move people
     READY_MS: FAST ? 300 : 3000,
     SHRINK_AFTER_S: 15, SHRINK_S: 30, TIME_LIMIT_S: 75,
     RESULT_MS: FAST ? 400 : 6000,

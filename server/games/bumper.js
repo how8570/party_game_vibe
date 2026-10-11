@@ -171,14 +171,20 @@ function tick() {
       const overlap = minD - d;
       a.x -= nx * overlap / 2; a.y -= ny * overlap / 2;
       b.x += nx * overlap / 2; b.y += ny * overlap / 2;
-      const va = a.vx * nx + a.vy * ny, vb = b.vx * nx + b.vy * ny;
+      const va = a.vx * nx + a.vy * ny, vb = b.vx * nx + b.vy * ny; // speeds along the normal (a -> b)
       if (va - vb > 0) { // approaching
-        const impulse = (va - vb) * C.BOUNCE + C.BUMP_BONUS;
-        a.vx -= nx * impulse; a.vy -= ny * impulse;
-        b.vx += nx * impulse; b.vy += ny * impulse;
         const aDash = now < a.dashUntil, bDash = now < b.dashUntil;
-        if (aDash && !bDash) { b.vx += nx * C.SHOVE; b.vy += ny * C.SHOVE; a.shoves++; }
-        if (bDash && !aDash) { a.vx -= nx * C.SHOVE; a.vy -= ny * C.SHOVE; b.shoves++; }
+        // weight grows with how hard you drive into the contact (va: a towards b, -vb: b towards a)
+        const ma = (1 + C.SPEED_MASS * Math.max(0, va)) * (aDash ? C.DASH_MASS : 1);
+        const mb = (1 + C.SPEED_MASS * Math.max(0, -vb)) * (bDash ? C.DASH_MASS : 1);
+        const j = (1 + C.RESTITUTION) * (va - vb) / (1 / ma + 1 / mb);
+        a.vx -= nx * j / ma; a.vy -= ny * j / ma;
+        b.vx += nx * j / mb; b.vy += ny * j / mb;
+        // the lighter side gets the extra shove, much bigger when the heavier side is dashing
+        const aHeavier = ma >= mb;
+        const extra = (C.BUMP_BONUS + ((aHeavier ? aDash : bDash) ? C.SHOVE : 0)) * Math.min(1, Math.abs(ma - mb));
+        if (aHeavier) { b.vx += nx * extra; b.vy += ny * extra; if (aDash) a.shoves++; }
+        else { a.vx -= nx * extra; a.vy -= ny * extra; if (bDash) b.shoves++; }
         a.hits++; b.hits++; a.lastHitAt = now; b.lastHitAt = now;
         broadcastDisplays({ t: 'bumper:bump', a: a.pid, b: b.pid, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, force: Math.abs(va - vb) });
         send(players.get(a.pid).ws, { t: 'haptic', ms: 25 });
