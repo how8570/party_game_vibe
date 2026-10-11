@@ -85,6 +85,13 @@
   .bbanner small { font-size: 22px; font-weight: 600; color: #ddd; }
   .bbanner .rank { font-size: 18px; color: #bbb; font-weight: 500; }
 
+  /* ---------- parkour ---------- */
+  #parkour { background: #0b0f2a; }
+  #course { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .progress { position: absolute; top: 96px; left: 40px; right: 40px; height: 6px; background: rgba(255,255,255,0.15); border-radius: 3px; }
+  .progress .dot { position: absolute; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.6); transition: left 120ms linear; }
+  .progress .flag { position: absolute; right: -14px; top: -14px; font-size: 20px; }
+
   /* ---------- debug overlay ---------- */
   #debug { position: fixed; inset: 44px 0 0 0; background: rgba(10,10,12,0.96); z-index: 30; overflow: auto; padding: 16px; display: grid; grid-template-columns: 1fr 300px; gap: 16px; }
   #cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; align-content: start; }
@@ -136,6 +143,9 @@
     <h2>大廳 <span id="rosterCount">0 位在線</span><span class="tip">手機橫拿 ◀ ▶ 跑、「跳」跳 · 走進遊戲區就開始</span></h2>
     <div class="actions">
       <button id="startBtn" class="primary" disabled>直接開始</button>
+      <button class="ghost gameBtn" data-game="quickdraw" title="快捷鍵 1">快槍手</button>
+      <button class="ghost gameBtn" data-game="bumper" title="快捷鍵 2">碰碰車</button>
+      <button class="ghost gameBtn" data-game="parkour" title="快捷鍵 3">跑酷</button>
       <button id="addBotBtn" class="ghost">＋ 機器人</button>
       <button id="removeBotBtn" class="ghost">－ 機器人</button>
       <button id="resetBtn" class="ghost">清除離線玩家</button>
@@ -188,6 +198,23 @@
     <div class="queue">推人出圈，最後站著的人贏。15 秒後圈會開始縮小。</div>
     <button id="bskipBtn" class="ghost">結束這場</button>
     <button id="bstopBtn" class="ghost">回大廳</button>
+  </div>
+</section>
+
+<!-- ---------- PARKOUR ---------- -->
+<section id="parkour" class="scene hidden">
+  <canvas id="course"></canvas>
+  <div class="bhud">
+    <div class="bround" id="pround">跑酷</div>
+    <div class="btime" id="ptime"></div>
+    <div class="balive" id="pleft"></div>
+  </div>
+  <div class="progress" id="pprogress"></div>
+  <div class="bbanner hidden" id="pbanner"></div>
+  <div class="duelbar">
+    <div class="queue">衝到終點，掉下去會回到檢查點。先到的贏，沒到的看跑多遠。</div>
+    <button id="pskipBtn" class="ghost">結束這場</button>
+    <button id="pstopBtn" class="ghost">回大廳</button>
   </div>
 </section>
 
@@ -253,6 +280,9 @@
       else if (m.t === 'bumper:bump') { bumps.push({ x: m.x, y: m.y, at: Date.now(), force: m.force }); sfx.bump(m.force); }
       else if (m.t === 'bumper:dash') sfx.dash();
       else if (m.t === 'bumper:out') sfx.out();
+      else if (m.t === 'parkour:checkpoint') sfx.holstered();
+      else if (m.t === 'parkour:fall') sfx.out();
+      else if (m.t === 'parkour:finish') { if (m.place === 1) sfx.win(); else sfx.intro(); }
     };
     ws.onclose = () => { $('#conn').textContent = '斷線，重連中…'; $('#conn').className = 'off'; setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 5000); };
     ws.onerror = () => { try { ws.close(); } catch (e) {} };
@@ -266,7 +296,11 @@
   $('#removeBotBtn').addEventListener('click', () => cmd('removebot'));
   $('#stopBtn').addEventListener('click', () => cmd('stop'));
   $('#skipBtn').addEventListener('click', () => cmd('skip'));
+  const startGame = (id) => send({ t: 'cmd', cmd: 'start', game: id });
+  for (const b of document.querySelectorAll('.gameBtn')) b.addEventListener('click', () => startGame(b.dataset.game));
+  const GAME_KEYS = { 1: 'quickdraw', 2: 'bumper', 3: 'parkour' };
   document.addEventListener('keydown', (e) => {
+    if (GAME_KEYS[e.key] && state.game.mode === 'lobby') { startGame(GAME_KEYS[e.key]); return; }
     if (e.key === 'Enter' && state.game.mode === 'lobby') cmd('start');
     else if (e.key === 'Escape' && state.game.mode !== 'lobby') cmd('stop');
     else if (e.key === 'd' || e.key === 'D') $('#debug').classList.toggle('hidden');
@@ -339,7 +373,7 @@
 
     // game zones on the ground
     for (const g of state.game.games || []) {
-      const x0 = px(g.zone.x0), x1 = px(g.zone.x1), gy = py(0);
+      const x0 = px(g.zone.x0), x1 = px(g.zone.x1), gy = py(g.zone.y || 0);
       const col = g.comingSoon ? '#6b6b7a' : '#ffd740';
       const glow = actx.createLinearGradient(0, gy - 60, 0, gy);
       glow.addColorStop(0, 'rgba(255,215,64,0)'); glow.addColorStop(1, g.comingSoon ? 'rgba(120,120,140,0.18)' : 'rgba(255,215,64,0.28)');
@@ -613,15 +647,144 @@
     } else banner.classList.add('hidden');
   }
 
+  // ---------- parkour (side-scrolling course, camera follows the pack) ----------
+  const course = $('#course'), cctx = course.getContext('2d');
+  const pkSmooth = new Map();
+  let pkCam = null, parkourResultKey = '';
+  $('#pskipBtn').addEventListener('click', () => cmd('skip'));
+  $('#pstopBtn').addEventListener('click', () => cmd('stop'));
+  function renderParkour() {
+    const k = state.game.parkour;
+    const box = course.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.max(1, Math.round(box.width)), H = Math.max(1, Math.round(box.height));
+    if (course.width !== W * dpr || course.height !== H * dpr) { course.width = W * dpr; course.height = H * dpr; }
+    cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const now = Date.now(), t = now / 1000;
+    const scale = (H - 160) / k.course.h;            // world units -> px
+    const viewW = W / scale;
+    // camera: centre of the runners still on the course, clamped to the course
+    const running = k.bodies.filter((b) => b.finishedAt == null);
+    const focus = running.length ? running.reduce((s, b) => s + b.pos.x, 0) / running.length : k.finishX;
+    const target = Math.max(viewW / 2, Math.min(k.course.w - viewW / 2, focus));
+    pkCam = pkCam == null ? target : pkCam + (target - pkCam) * 0.08;
+    const groundY = H - 110;
+    const px = (x) => (x - pkCam + viewW / 2) * scale, py = (y) => groundY - y * scale;
+
+    // sky + parallax hills (same palette as the lobby, so it feels like the same world)
+    const sky = cctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, '#0b0f2a'); sky.addColorStop(0.6, '#1a1540'); sky.addColorStop(1, '#2d1b4e');
+    cctx.fillStyle = sky; cctx.fillRect(0, 0, W, H);
+    for (const s of stars) { cctx.globalAlpha = 0.5 + 0.5 * Math.sin(t * 1.5 + s.tw); cctx.fillStyle = '#fff'; cctx.beginPath(); cctx.arc(((s.x * W - pkCam * 4) % W + W) % W, s.y * H, s.r, 0, Math.PI * 2); cctx.fill(); }
+    cctx.globalAlpha = 1;
+    hills(cctx, W, groundY + 40, 26, 0.006, pkCam * 0.03, '#221a4d', 150);
+    hills(cctx, W, groundY + 40, 34, 0.01, 1.7 + pkCam * 0.06, '#2b2160', 90);
+    hills(cctx, W, groundY + 40, 20, 0.018, 3.1 + pkCam * 0.1, '#352a70', 40);
+    // pit glow below the course
+    const pit = cctx.createLinearGradient(0, groundY, 0, H);
+    pit.addColorStop(0, 'rgba(255,82,82,0)'); pit.addColorStop(1, 'rgba(255,82,82,0.25)');
+    cctx.fillStyle = pit; cctx.fillRect(0, groundY, W, H - groundY);
+
+    // platforms
+    const thick = 0.42 * scale;
+    for (const pl of k.course.platforms) {
+      const x = px(pl.x), y = py(pl.y), w = pl.w * scale;
+      if (x + w < -20 || x > W + 20) continue;
+      const isGround = pl.y === 0;
+      cctx.fillStyle = isGround ? '#3b2d63' : '#4a3a7a';
+      cctx.beginPath(); cctx.roundRect(x, y, w, isGround ? H - y : thick, isGround ? [6, 6, 0, 0] : 8); cctx.fill();
+      cctx.fillStyle = isGround ? '#8e78d0' : '#a08ae0';
+      cctx.beginPath(); cctx.roundRect(x, y, w, 7, isGround ? [6, 6, 0, 0] : [8, 8, 0, 0]); cctx.fill();
+    }
+    // checkpoints (flags) and the finish line
+    for (let i = 1; i < k.checkpoints.length; i++) {
+      const cx = k.checkpoints[i], x = px(cx);
+      if (x < -40 || x > W + 40) continue;
+      let top = 0; for (const pl of k.course.platforms) if (cx >= pl.x && cx <= pl.x + pl.w && pl.y > top) top = pl.y;
+      const y = py(top);
+      cctx.strokeStyle = '#ddd'; cctx.lineWidth = 3; cctx.beginPath(); cctx.moveTo(x, y); cctx.lineTo(x, y - 52); cctx.stroke();
+      cctx.fillStyle = '#69f0ae'; cctx.beginPath(); cctx.moveTo(x, y - 52); cctx.lineTo(x + 30, y - 42); cctx.lineTo(x, y - 32); cctx.closePath(); cctx.fill();
+    }
+    const fx = px(k.finishX);
+    if (fx > -80 && fx < W + 80) {
+      const y = py(0);
+      for (let r = 0; r < 8; r++) for (let c = 0; c < 2; c++) { cctx.fillStyle = (r + c) % 2 ? '#fff' : '#222'; cctx.fillRect(fx + c * 10, y - 90 + r * 10, 10, 10); }
+      cctx.fillStyle = '#ffd740'; cctx.font = '900 16px system-ui, "Noto Sans TC", sans-serif'; cctx.textAlign = 'center'; cctx.textBaseline = 'bottom';
+      cctx.fillText('FINISH', fx + 10, y - 96);
+    }
+
+    // runners
+    const bw = 0.8 * scale, bh = 1.0 * scale;
+    const sorted = [...k.bodies].sort((a, b) => a.pos.x - b.pos.x);
+    for (const p of sorted) {
+      let s = pkSmooth.get(p.pid);
+      if (!s) { s = { x: p.pos.x, y: p.pos.y }; pkSmooth.set(p.pid, s); }
+      s.x += (p.pos.x - s.x) * 0.5; s.y += (p.pos.y - s.y) * 0.5;
+      const x = px(s.x), feet = py(s.y);
+      // off-screen: edge marker with name
+      if (x < -10 || x > W + 10) {
+        const ex = x < 0 ? 14 : W - 14;
+        cctx.fillStyle = p.color; cctx.beginPath(); cctx.moveTo(ex, feet - 20); cctx.lineTo(ex + (x < 0 ? 14 : -14), feet - 32); cctx.lineTo(ex + (x < 0 ? 14 : -14), feet - 8); cctx.closePath(); cctx.fill();
+        cctx.font = '700 12px system-ui, "Noto Sans TC", sans-serif'; cctx.textAlign = x < 0 ? 'left' : 'right'; cctx.textBaseline = 'middle'; cctx.fillStyle = '#fff';
+        cctx.fillText(p.name, ex + (x < 0 ? 18 : -18), feet - 20);
+        continue;
+      }
+      let sx = 1, sy = 1;
+      const land = (now - p.landedAt) / 180;
+      if (land >= 0 && land < 1) { const kk = Math.sin(land * Math.PI); sx = 1 + 0.3 * kk; sy = 1 - 0.3 * kk; }
+      else if (!p.onGround && p.vel.y > 3) { sx = 0.88; sy = 1.14; }
+      cctx.save();
+      cctx.globalAlpha = p.finishedAt != null ? 0.45 : p.respawning ? 0.5 + 0.5 * Math.sin(t * 30) : 1;
+      cctx.translate(x, feet); cctx.scale(sx, sy);
+      cctx.fillStyle = p.color; cctx.beginPath(); cctx.roundRect(-bw / 2, -bh, bw, bh, bw * 0.45); cctx.fill();
+      cctx.fillStyle = 'rgba(0,0,0,0.35)';
+      const step = p.onGround && Math.abs(p.vel.x) > 0.5 ? Math.sin(t * 18) * 4 : 0;
+      cctx.beginPath(); cctx.roundRect(-bw * 0.4, -5 + step, bw * 0.32, 6, 3); cctx.fill();
+      cctx.beginPath(); cctx.roundRect(bw * 0.08, -5 - step, bw * 0.32, 6, 3); cctx.fill();
+      const f = p.facing || 1;
+      cctx.fillStyle = '#fff'; cctx.beginPath(); cctx.arc(f * 4 - 7, -bh * 0.68, 5, 0, Math.PI * 2); cctx.fill(); cctx.beginPath(); cctx.arc(f * 4 + 7, -bh * 0.68, 5, 0, Math.PI * 2); cctx.fill();
+      cctx.fillStyle = '#111'; cctx.beginPath(); cctx.arc(f * 6 - 7, -bh * 0.68, 2.6, 0, Math.PI * 2); cctx.fill(); cctx.beginPath(); cctx.arc(f * 6 + 7, -bh * 0.68, 2.6, 0, Math.PI * 2); cctx.fill();
+      cctx.restore();
+      cctx.font = '700 14px system-ui, "Noto Sans TC", sans-serif'; cctx.textAlign = 'center'; cctx.textBaseline = 'bottom';
+      cctx.fillStyle = 'rgba(0,0,0,0.5)'; cctx.fillText(p.name, x + 1, feet - bh - 6);
+      cctx.fillStyle = '#fff'; cctx.fillText(p.name, x, feet - bh - 7);
+      if (p.finishedAt != null) { cctx.fillStyle = '#ffd740'; cctx.font = '800 12px system-ui, sans-serif'; cctx.fillText(`${(p.finishedAt / 1000).toFixed(2)}s`, x, feet - bh - 22); }
+    }
+    for (const pid of pkSmooth.keys()) if (!k.bodies.some((b) => b.pid === pid)) pkSmooth.delete(pid);
+
+    // HUD + progress bar
+    $('#pround').textContent = `跑酷 · ROUND ${k.round}`;
+    const tl = Math.max(0, k.timeLimit - k.time / 1000);
+    $('#ptime').textContent = k.phase === 'play' ? `${(k.time / 1000).toFixed(1)} s` : '';
+    $('#ptime').classList.toggle('low', tl <= 10);
+    $('#pleft').textContent = `${k.bodies.filter((b) => b.finishedAt != null).length} / ${k.bodies.length} 人到終點`;
+    $('#pprogress').innerHTML = k.bodies.map((b) => `<span class="dot" style="left:${Math.min(100, Math.max(0, (b.pos.x - k.startX) / (k.finishX - k.startX) * 100))}%;background:${b.color}" title="${b.name}"></span>`).join('') + '<span class="flag">🏁</span>';
+    const banner = $('#pbanner');
+    if (k.phase === 'ready') {
+      const left = Math.ceil((k.readyMs - (now - k.phaseAt)) / 1000);
+      banner.classList.remove('hidden'); banner.innerHTML = `${left > 0 ? left : 'GO!'}<small>衝到終點！</small>`;
+    } else if (k.phase === 'result' && k.result) {
+      banner.classList.remove('hidden');
+      const w = k.result.winner ? k.bodies.find((b) => b.pid === k.result.winner) : null;
+      banner.innerHTML = (w ? `<span style="color:${w.color}">${w.name}</span> 第一！` : '沒人到終點') +
+        `<div class="rank">${k.result.ranking.map((pid, i) => { const b = k.bodies.find((x) => x.pid === pid); return `${i + 1}. ${b ? b.name : '?'}${b && b.finishedAt != null ? ` ${(b.finishedAt / 1000).toFixed(2)}s` : ''}`; }).join('　')}</div>`;
+      const key = `${k.round}:${k.result.winner}`;
+      if (parkourResultKey !== key) { parkourResultKey = key; if (w) sfx.win(); else sfx.fail(); }
+    } else banner.classList.add('hidden');
+  }
+
   function render() {
     const inDuel = !!state.game.duel;
     const inBumper = !!state.game.bumper;
-    $('#lobby').classList.toggle('hidden', inDuel || inBumper);
+    const inParkour = !!state.game.parkour;
+    $('#lobby').classList.toggle('hidden', inDuel || inBumper || inParkour);
     $('#duel').classList.toggle('hidden', !inDuel);
     $('#bumper').classList.toggle('hidden', !inBumper);
+    $('#parkour').classList.toggle('hidden', !inParkour);
     if (inDuel) renderDuel();
     else if (inBumper) renderBumper();
-    else { renderLobby(); lastPhaseKey = ''; bumperResultKey = ''; trails.clear(); bumps.length = 0; }
+    else if (inParkour) renderParkour();
+    else { renderLobby(); lastPhaseKey = ''; bumperResultKey = ''; parkourResultKey = ''; pkCam = null; trails.clear(); bumps.length = 0; }
     $('#count').textContent = `${state.players.filter((p) => p.connected).length} 位玩家`;
     if (!$('#debug').classList.contains('hidden')) renderDebug();
     requestAnimationFrame(render);

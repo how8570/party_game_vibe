@@ -1,10 +1,46 @@
 // Lobby playground: 2D platformer physics, game zones, emoji. Runs at 60 Hz on the server; the display only draws.
+// The physics step (stepBody) is shared with other platformer games (parkour).
 const { WORLD, GAMES } = require('./config');
 const { players, game, bus } = require('./state');
 const { send, event } = require('./net');
 const { clamp } = require('./players');
 
 // ---------- physics ----------
+// body: { pos, vel, onGround, facing, landedAt, jumpedAt, lastGroundAt, wantJumpAt }
+// input: { dir: -1|0|1, jumpHeld, allowJump }
+// level: { w, platforms: [{x, y, w}], floor: true|false (implicit ground at y=0?) }
+function stepBody(b, input, level, dt, now) {
+  const dir = input.dir || 0;
+  if (dir) { b.vel.x += dir * WORLD.ACCEL * dt; b.facing = dir > 0 ? 1 : -1; }
+  else { const f = (b.onGround ? WORLD.FRICTION : WORLD.AIR_FRICTION) * dt; b.vel.x = Math.abs(b.vel.x) <= f ? 0 : b.vel.x - Math.sign(b.vel.x) * f; }
+  b.vel.x = clamp(b.vel.x, -WORLD.MAX_SPEED, WORLD.MAX_SPEED);
+  // buffered jump (pressed slightly before landing) + coyote time (just walked off an edge) + held button = bunny hop on every landing
+  const canJump = b.onGround || now - b.lastGroundAt < WORLD.COYOTE_MS;
+  const wants = (b.wantJumpAt && now - b.wantJumpAt < WORLD.JUMP_BUFFER_MS) || input.jumpHeld;
+  if (wants && canJump && input.allowJump !== false) {
+    b.vel.y = WORLD.JUMP; b.onGround = false; b.wantJumpAt = 0; b.jumpedAt = now; b.lastGroundAt = 0;
+  }
+  const prevY = b.pos.y;
+  b.vel.y -= WORLD.GRAVITY * dt;
+  b.pos.x = clamp(b.pos.x + b.vel.x * dt, 0.4, level.w - 0.4);
+  b.pos.y += b.vel.y * dt;
+  // one-way platforms: land only when falling through the top surface
+  let landed = false;
+  if (b.vel.y <= 0) {
+    for (const pl of level.platforms) {
+      if (b.pos.x >= pl.x - 0.3 && b.pos.x <= pl.x + pl.w + 0.3 && prevY >= pl.y - 0.001 && b.pos.y <= pl.y) {
+        b.pos.y = pl.y; b.vel.y = 0; landed = true; break;
+      }
+    }
+  }
+  if (landed && !b.onGround) b.landedAt = now;
+  b.onGround = landed;
+  if (landed) b.lastGroundAt = now;
+  if (level.floor !== false && b.pos.y < 0) { b.pos.y = 0; b.vel.y = 0; b.onGround = true; b.lastGroundAt = now; }
+  return landed;
+}
+
+const LOBBY_LEVEL = { w: WORLD.W, platforms: WORLD.PLATFORMS, floor: true };
 let lastMoveAt = Date.now();
 function moveTick() {
   const now = Date.now();
@@ -12,36 +48,8 @@ function moveTick() {
   lastMoveAt = now;
   for (const p of players.values()) {
     if (!p.connected) continue;
-    const frozen = game.participants.has(p.pid); // people inside a running game stand still
-    const input = frozen ? 0 : (p.moveDir || 0);
-    // horizontal
-    if (input) { p.vel.x += input * WORLD.ACCEL * dt; p.facing = input > 0 ? 1 : -1; }
-    else { const f = (p.onGround ? WORLD.FRICTION : WORLD.AIR_FRICTION) * dt; p.vel.x = Math.abs(p.vel.x) <= f ? 0 : p.vel.x - Math.sign(p.vel.x) * f; }
-    p.vel.x = clamp(p.vel.x, -WORLD.MAX_SPEED, WORLD.MAX_SPEED);
-    // buffered jump (pressed slightly before landing) + coyote time (just walked off an edge) + held button = bunny hop on every landing
-    const canJump = p.onGround || now - p.lastGroundAt < WORLD.COYOTE_MS;
-    const wants = (p.wantJumpAt && now - p.wantJumpAt < WORLD.JUMP_BUFFER_MS) || p.jumpHeld;
-    if (wants && canJump && !frozen) {
-      p.vel.y = WORLD.JUMP; p.onGround = false; p.wantJumpAt = 0; p.jumpedAt = now; p.lastGroundAt = 0;
-    }
-    // vertical
-    const prevY = p.pos.y;
-    p.vel.y -= WORLD.GRAVITY * dt;
-    p.pos.x = clamp(p.pos.x + p.vel.x * dt, 0.4, WORLD.W - 0.4);
-    p.pos.y += p.vel.y * dt;
-    // one-way platforms: land only when falling through the top surface
-    let landed = false;
-    if (p.vel.y <= 0) {
-      for (const pl of WORLD.PLATFORMS) {
-        if (p.pos.x >= pl.x - 0.3 && p.pos.x <= pl.x + pl.w + 0.3 && prevY >= pl.y - 0.001 && p.pos.y <= pl.y) {
-          p.pos.y = pl.y; p.vel.y = 0; landed = true; break;
-        }
-      }
-    }
-    if (landed && !p.onGround) p.landedAt = now;
-    p.onGround = landed;
-    if (landed) p.lastGroundAt = now;
-    if (p.pos.y < 0) { p.pos.y = 0; p.vel.y = 0; p.onGround = true; p.lastGroundAt = now; }
+    const frozen = game.participants.has(p.pid); // people inside a running game stand still in the lobby
+    stepBody(p, { dir: frozen ? 0 : (p.moveDir || 0), jumpHeld: !frozen && p.jumpHeld, allowJump: !frozen }, LOBBY_LEVEL, dt, now);
   }
   zoneTick(now);
 }
@@ -69,10 +77,10 @@ bus.on('shake', (p) => {
   if (game.mode === 'lobby') send(p.ws, { t: 'haptic', ms: 80 });
 });
 
-// ---------- game zones: walk into a game's area on the ground to join it ----------
+// ---------- game zones: stand on a game's patch of floor (ground, or a platform when zone.y is set) to join it ----------
 function zoneOf(p) {
-  if (!p.connected || !p.onGround || p.pos.y >= 0.05) return null;
-  return GAMES.find((g) => p.pos.x >= g.zone.x0 && p.pos.x <= g.zone.x1) || null;
+  if (!p.connected || !p.onGround) return null;
+  return GAMES.find((g) => Math.abs(p.pos.y - (g.zone.y || 0)) < 0.05 && p.pos.x >= g.zone.x0 && p.pos.x <= g.zone.x1) || null;
 }
 
 function zoneOccupants(gameId) {
@@ -110,13 +118,14 @@ function zoneTick(now) {
   }
 }
 
-// Launch an avatar out of its zone towards the middle of the map so the slot opens up.
+// Launch an avatar out of its zone so the slot opens up: towards the middle of the map, or off the side of a raised zone.
 function kickOut(p) {
   if (!p) return;
-  const g = GAMES.find((z) => p.pos.x >= z.zone.x0 - 0.5 && p.pos.x <= z.zone.x1 + 0.5);
-  const toRight = g ? (g.zone.x0 + g.zone.x1) / 2 < WORLD.W / 2 : p.pos.x < WORLD.W / 2;
-  p.pos.x = g ? (toRight ? g.zone.x1 + 0.6 : g.zone.x0 - 0.6) : p.pos.x;
-  p.pos.y = 0.6; p.onGround = false;
+  const g = GAMES.find((z) => Math.abs(p.pos.y - (z.zone.y || 0)) < 0.6 && p.pos.x >= z.zone.x0 - 0.5 && p.pos.x <= z.zone.x1 + 0.5);
+  const center = g ? (g.zone.x0 + g.zone.x1) / 2 : p.pos.x;
+  const toRight = Math.abs(center - WORLD.W / 2) < 1 ? Math.random() < 0.5 : center < WORLD.W / 2;
+  if (g) p.pos.x = toRight ? g.zone.x1 + 0.6 : g.zone.x0 - 0.6;
+  p.pos.y = (g ? g.zone.y || 0 : 0) + 0.6; p.onGround = false;
   p.vel.x = toRight ? WORLD.KICK.speed : -WORLD.KICK.speed; p.vel.y = WORLD.KICK.vy;
   p.zone = null; p.zoneSince = 0; p.facing = toRight ? 1 : -1;
   send(p.ws, { t: 'zone', game: null, name: null });
@@ -134,4 +143,4 @@ function publicGames() {
 
 function publicWorld() { return { w: WORLD.W, h: WORLD.H, platforms: WORLD.PLATFORMS }; }
 
-module.exports = { wantJump, onJump, onMove, onEmoji, zoneOccupants, kickOut, publicGames, publicWorld };
+module.exports = { stepBody, wantJump, onJump, onMove, onEmoji, zoneOccupants, kickOut, publicGames, publicWorld };

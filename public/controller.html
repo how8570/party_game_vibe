@@ -188,6 +188,17 @@
   </div>
   <button id="dash" class="dash">衝刺</button>
 </div>
+<!-- parkour: same run/jump controls as the lobby, status on top -->
+<div id="s-parkour" class="screen lobby hidden">
+  <div class="huge" id="pkTitle" style="font-size:40px">跑酷</div>
+  <div class="react" id="pkTime" style="font-size:48px">0.00<small> s</small></div>
+  <p id="pkStatus">衝到終點！掉下去會回到檢查點</p>
+</div>
+<div id="s-parkour-result" class="screen duel hidden">
+  <div class="huge" id="pkResTitle"></div>
+  <p id="pkResSub" style="color:#eee;font-size:18px"></p>
+  <p id="pkResWins"></p>
+</div>
 <div id="s-bumper-result" class="screen duel hidden">
   <div class="huge" id="bumpTitle"></div>
   <p id="bumpSub" style="color:#eee;font-size:18px"></p>
@@ -258,11 +269,16 @@
     $('#holsterIcon').classList.toggle('holstered', ok);
     if (ok) vibrate(30);
   }
+  // parkour stopwatch on the phone (the server's time is authoritative; this is just for the runner to glance at)
+  let pkStart = null;
+  setInterval(() => { if (pkStart) $('#pkTime').innerHTML = `${((Date.now() - pkStart) / 1000).toFixed(1)}<small> s</small>`; }, 100);
+
   function showScreen(m) {
     screen = m.screen;
     for (const el of document.querySelectorAll('.screen[id^="s-"]')) el.classList.toggle('hidden', el.id !== 's-' + m.screen);
-    $('#controls').classList.toggle('hidden', m.screen !== 'lobby');
-    if (m.screen !== 'lobby') { held.clear(); padTouches.clear(); sendMove(); jumpTouches.clear(); send({ t: 'jump', down: false }); }
+    const runScreen = m.screen === 'lobby' || m.screen === 'parkour';
+    $('#controls').classList.toggle('hidden', !runScreen);
+    if (!runScreen) { held.clear(); padTouches.clear(); sendMove(); jumpTouches.clear(); send({ t: 'jump', down: false }); }
     if (m.screen !== 'bumper') stickRelease();
     $('#misfire').classList.remove('on');
     if (m.opponentColor) document.documentElement.style.setProperty('--opp', m.opponentColor);
@@ -272,6 +288,23 @@
         $('#spQueue').textContent = `${m.game || ''} 進行中。結束後走進遊戲區就能挑戰冠軍`;
         held.clear();
         break;
+      case 'parkour':
+        $('#pkTitle').textContent = m.phase === 'ready' ? '準備…' : m.finished ? `第 ${m.place} 名！` : '跑酷';
+        $('#pkStatus').textContent = m.phase === 'ready' ? `${m.players} 人競速，倒數中` : m.finished ? '等其他人跑完' : '衝到終點！掉下去會回到檢查點';
+        if (m.phase === 'play' && !pkStart) pkStart = Date.now();
+        if (m.phase === 'ready') { pkStart = null; vibrate([60, 60, 60]); }
+        if (m.finished && m.time != null) { pkStart = null; $('#pkTime').innerHTML = `${(m.time / 1000).toFixed(2)}<small> s</small>`; }
+        break;
+      case 'parkour-result': {
+        const el = $('#s-parkour-result');
+        el.classList.remove('win', 'lose'); el.classList.add(m.outcome);
+        pkStart = null;
+        $('#pkResTitle').textContent = m.outcome === 'win' ? '你贏了！' : `第 ${m.rank} 名`;
+        $('#pkResSub').textContent = (m.time != null ? `${(m.time / 1000).toFixed(2)} 秒` : '沒跑到終點') + (m.falls ? `，掉下去 ${m.falls} 次` : '') + (m.winner && m.outcome !== 'win' ? `。${m.winner} 第一` : '');
+        $('#pkResWins').textContent = `你目前 ${m.wins} 勝`;
+        vibrate(m.outcome === 'win' ? [80, 60, 80, 60, 160] : 200);
+        break;
+      }
       case 'bumper':
         $('#bumperStatus').textContent = m.phase === 'ready' ? `${m.players} 人混戰，準備…` : m.alive ? '推人出圈！最後站著的人贏' : '你出圈了，看別人打';
         $('#stickHint').classList.toggle('hidden', m.phase !== 'ready' && !m.alive ? true : false);

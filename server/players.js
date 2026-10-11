@@ -29,7 +29,7 @@ function newPlayer(pid, name) {
     clock: null,
     clockSamples: [],
     // lobby platformer
-    pos: { x: WORLD.SPAWN.x0 + Math.random() * (WORLD.SPAWN.x1 - WORLD.SPAWN.x0), y: WORLD.SPAWN.y },
+    pos: (() => { const r = WORLD.SPAWN.ranges[Math.floor(Math.random() * WORLD.SPAWN.ranges.length)]; return { x: r[0] + Math.random() * (r[1] - r[0]), y: WORLD.SPAWN.y }; })(),
     vel: { x: 0, y: 0 },
     onGround: false, facing: 1, landedAt: 0, jumpedAt: 0, lastGroundAt: 0, wantJumpAt: 0,
     moveDir: 0, jumpHeld: false, zone: null, zoneSince: 0,

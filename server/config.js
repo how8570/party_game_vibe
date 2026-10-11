@@ -32,7 +32,7 @@ module.exports = {
       { x: 11.2, y: 4.0, w: 2.4 },
       { x: 8.8, y: 5.6, w: 2.4 },
     ],
-    SPAWN: { x0: 6, x1: 14, y: 7 },   // newcomers drop in from the sky, between the game zones
+    SPAWN: { ranges: [[5, 8.3], [11.7, 15]], y: 7 },   // newcomers drop in from the sky, either side of the tower top (which is the parkour entrance)
     KICK: { speed: 5, vy: 7 },        // how hard a loser gets launched out of a zone, towards the middle of the map
     EMOJI_MS: 2500, EMOJI_RATE_MS: 350,
   },
@@ -41,7 +41,41 @@ module.exports = {
   GAMES: [
     { id: 'quickdraw', name: '快槍手', min: 2, max: 2, zone: { x0: 15.4, x1: 19.6 }, holdMs: 1000, countdownMs: 0 },
     { id: 'bumper', name: '碰碰車', min: 2, max: 8, zone: { x0: 0.4, x1: 4.6 }, holdMs: 1000, countdownMs: 5000 },
+    // the parkour entrance is the top of the tower: you have to climb to get there
+    { id: 'parkour', name: '跑酷', min: 1, max: 8, zone: { x0: 8.8, x1: 11.2, y: 5.6 }, holdMs: 1000, countdownMs: 5000 },
   ],
+
+  // Parkour: a side-scrolling course with the same physics as the lobby. Falling below FALL_Y sends you back to the
+  // last checkpoint you passed; the clock keeps running. First across FINISH_X wins.
+  PARKOUR: {
+    READY_MS: FAST ? 300 : 3000,
+    RESULT_MS: FAST ? 400 : 7000,
+    TIME_LIMIT_S: 90,
+    FALL_Y: -3,
+    START_X: 2,
+    FINISH_X: 58,
+    CHECKPOINTS: [2, 14, 26, 47],   // x positions on the ground; the first is the start
+    // Movement has no walk/run distinction, so every gap must be clearable at full speed by jumping at the edge:
+    // airtime 0.87 s x 6.5 u/s = 5.6 units of reach on the flat. Pits are 4 wide. Raised platforms are optional.
+    COURSE: {
+      w: 62, h: 12, floor: false,
+      platforms: [
+        // ground segments (y = 0) with 4-wide pits between them
+        { x: 0, y: 0, w: 9 },
+        { x: 13, y: 0, w: 8 },
+        { x: 25, y: 0, w: 7 },
+        { x: 36, y: 0, w: 6 },
+        { x: 46, y: 0, w: 16 },
+        // raised platforms: scenery and an optional high road (one-way, never block the ground route)
+        { x: 15.5, y: 1.7, w: 2.5 },
+        { x: 18.5, y: 3.2, w: 2.5 },
+        { x: 27.5, y: 1.7, w: 3 },
+        { x: 39, y: 1.7, w: 2.5 },
+        { x: 50, y: 1.7, w: 3 },
+        { x: 53.5, y: 3.3, w: 3 },
+      ],
+    },
+  },
 
   // Bumper (sumo). Arena units: ring radius 6, bodies radius 0.5.
   BUMPER: {

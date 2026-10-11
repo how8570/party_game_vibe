@@ -56,13 +56,30 @@ class Bot {
     const s = this.screen.screen;
     if (s === 'lobby') this.thinkLobby();
     else if (s === 'bumper') this.thinkBumper();
+    else if (s === 'parkour') this.thinkParkour();
+  }
+
+  // ---- parkour: run right, jump at gaps and at steps up ----
+  thinkParkour() {
+    const st = games.byId.parkour.publicState().parkour;
+    if (!st || st.phase !== 'play') return;
+    const me = st.bodies.find((b) => b.pid === this.pid);
+    if (!me || me.finishedAt != null) return;
+    const p = this.p;
+    if (p.moveDir !== 1) route(p, { t: 'move', dir: 1 });
+    if (!me.onGround) return;
+    const ahead = me.pos.x + 1.1;
+    const under = (x, y) => st.course.platforms.some((pl) => x >= pl.x && x <= pl.x + pl.w && Math.abs(pl.y - y) < 0.05);
+    const stepUp = st.course.platforms.some((pl) => pl.x > me.pos.x && pl.x < me.pos.x + 2.2 && pl.y > me.pos.y + 0.3 && pl.y <= me.pos.y + 2.6);
+    if (!under(ahead, me.pos.y) || stepUp) route(p, { t: 'jump' });
   }
 
   // ---- lobby: follow humans into a zone, otherwise stroll ----
   thinkLobby() {
     const p = this.p, now = Date.now();
     const humans = [...players.values()].filter((q) => q.connected && !q.isBot);
-    const zoneHuman = humans.find((q) => q.zone);
+    // follow humans into ground-level zones only (bots cannot climb to the tower yet)
+    const zoneHuman = humans.find((q) => q.zone && !(GAMES.find((z) => z.id === q.zone) || {}).zone.y);
     let targetX = null;
     if (zoneHuman) {
       const g = GAMES.find((z) => z.id === zoneHuman.zone);

@@ -64,7 +64,7 @@ function handleDisplay(ws) {
     let m; try { m = JSON.parse(raw); } catch (e) { return; }
     if (m.t !== 'cmd') return;
     switch (m.cmd) {
-      case 'start': games.hostStart(); break;
+      case 'start': games.hostStart(typeof m.game === 'string' ? m.game : undefined); break;
       case 'stop': games.stop(); break;
       case 'skip': games.skip(); break;
       case 'reset': P.forgetDisconnected(); break;

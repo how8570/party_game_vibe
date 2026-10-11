@@ -59,7 +59,7 @@ function bot(port, name, { reaction = 250, behavior = 'normal', clockSkew = 0 } 
     if (m.t === 'zone') { b.zone = m.game; b.zones.push(m.game); return; }
     if (m.t !== 'game') return;
     b.screen = m.screen; b.screens.push(m); b.last = m;
-    if (m.screen === 'result' || m.screen === 'bumper-result') b.results.push(m);
+    if (m.screen.endsWith('result')) b.results.push(m); // result / bumper-result / parkour-result
     if (behavior === 'manual') return;
     switch (m.screen) {
       case 'lobby': case 'spectate': b.beta = 45; break;
