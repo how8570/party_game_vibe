@@ -46,10 +46,11 @@ module.exports = {
   // Bumper (sumo). Arena units: ring radius 6, bodies radius 0.5.
   BUMPER: {
     RADIUS: 6, MIN_RADIUS: 2.2, BODY_R: 0.55,
-    ACCEL: 30, DAMPING: 4.5, MAX_SPEED: 7,
-    DASH_SPEED: 17, DASH_MS: 220, DASH_COOLDOWN_MS: 1400,
-    BOUNCE: 1.0,          // 1.0 = fully elastic exchange along the collision normal
-    SHOVE: 9,             // extra push a dashing body gives the one it hits
+    ACCEL: 30, DAMPING: 3.5, MAX_SPEED: 7,   // MAX_SPEED caps steering only; knock-back decays through DAMPING
+    DASH_SPEED: 18, DASH_MS: 220, DASH_COOLDOWN_MS: 1400,
+    BOUNCE: 1.5,          // 1.0 = fully elastic exchange along the collision normal; >1 = extra bounce
+    BUMP_BONUS: 3,        // every collision adds at least this much separation speed, so even slow bumps shove
+    SHOVE: 20,            // extra push a dashing body gives the one it hits
     READY_MS: FAST ? 300 : 3000,
     SHRINK_AFTER_S: 15, SHRINK_S: 30, TIME_LIMIT_S: 75,
     RESULT_MS: FAST ? 400 : 6000,

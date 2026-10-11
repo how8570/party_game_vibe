@@ -147,12 +147,12 @@ function tick() {
   for (const b of alive) {
     const dashing = now < b.dashUntil;
     if (!dashing) {
-      b.vx += b.stick.x * C.ACCEL * dt;
-      b.vy += b.stick.y * C.ACCEL * dt;
+      // the stick can only accelerate you up to MAX_SPEED; being knocked faster than that is allowed and decays through damping
+      const nx = b.vx + b.stick.x * C.ACCEL * dt, ny = b.vy + b.stick.y * C.ACCEL * dt;
+      const ns = len(nx, ny), s0 = len(b.vx, b.vy);
+      if (ns <= C.MAX_SPEED || ns < s0) { b.vx = nx; b.vy = ny; }
       const damp = Math.max(0, 1 - C.DAMPING * dt);
       b.vx *= damp; b.vy *= damp;
-      const s = len(b.vx, b.vy);
-      if (s > C.MAX_SPEED) { b.vx *= C.MAX_SPEED / s; b.vy *= C.MAX_SPEED / s; }
     }
     b.x += b.vx * dt; b.y += b.vy * dt;
   }
@@ -170,7 +170,7 @@ function tick() {
       b.x += nx * overlap / 2; b.y += ny * overlap / 2;
       const va = a.vx * nx + a.vy * ny, vb = b.vx * nx + b.vy * ny;
       if (va - vb > 0) { // approaching
-        const impulse = (va - vb) * C.BOUNCE;
+        const impulse = (va - vb) * C.BOUNCE + C.BUMP_BONUS;
         a.vx -= nx * impulse; a.vy -= ny * impulse;
         b.vx += nx * impulse; b.vy += ny * impulse;
         const aDash = now < a.dashUntil, bDash = now < b.dashUntil;
