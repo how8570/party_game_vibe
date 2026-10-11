@@ -54,7 +54,7 @@ function handleController(ws, hello) {
       case 'pong': P.onPong(p, m); break;
       case 'shot': games.onShot(p, m, receivedAt); break;
       case 'emoji': lobby.onEmoji(p, m); break;
-      case 'jump': lobby.wantJump(p); break;
+      case 'jump': lobby.onJump(p, m); break;
       case 'move': lobby.onMove(p, m); break;
       case 'btn': P.onButton(p, m); break;
       case 'calib': p.neutral = null; break;

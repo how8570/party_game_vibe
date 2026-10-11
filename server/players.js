@@ -32,7 +32,7 @@ function newPlayer(pid, name) {
     pos: { x: WORLD.SPAWN.x0 + Math.random() * (WORLD.SPAWN.x1 - WORLD.SPAWN.x0), y: WORLD.SPAWN.y },
     vel: { x: 0, y: 0 },
     onGround: false, facing: 1, landedAt: 0, jumpedAt: 0, lastGroundAt: 0, wantJumpAt: 0,
-    moveDir: 0, zone: null, zoneSince: 0,
+    moveDir: 0, jumpHeld: false, zone: null, zoneSince: 0,
     emoji: null, emojiAt: 0, lastEmojiAt: 0,
   };
 }
@@ -142,7 +142,7 @@ function leave(p, ws) {
   if (p.ws !== ws) return false; // an older socket of a player who already reconnected
   p.connected = false; p.ws = null;
   p.buttons = { A: false, B: false };
-  p.moveDir = 0;
+  p.moveDir = 0; p.jumpHeld = false;
   event(p, 'leave', p.name);
   console.log(`[leave] #${p.num} ${p.name}`);
   bus.emit('player:leave', p);

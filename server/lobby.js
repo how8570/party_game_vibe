@@ -18,9 +18,10 @@ function moveTick() {
     if (input) { p.vel.x += input * WORLD.ACCEL * dt; p.facing = input > 0 ? 1 : -1; }
     else { const f = (p.onGround ? WORLD.FRICTION : WORLD.AIR_FRICTION) * dt; p.vel.x = Math.abs(p.vel.x) <= f ? 0 : p.vel.x - Math.sign(p.vel.x) * f; }
     p.vel.x = clamp(p.vel.x, -WORLD.MAX_SPEED, WORLD.MAX_SPEED);
-    // buffered jump (pressed slightly before landing) + coyote time (just walked off an edge)
+    // buffered jump (pressed slightly before landing) + coyote time (just walked off an edge) + held button = bunny hop on every landing
     const canJump = p.onGround || now - p.lastGroundAt < WORLD.COYOTE_MS;
-    if (p.wantJumpAt && now - p.wantJumpAt < WORLD.JUMP_BUFFER_MS && canJump && !frozen) {
+    const wants = (p.wantJumpAt && now - p.wantJumpAt < WORLD.JUMP_BUFFER_MS) || p.jumpHeld;
+    if (wants && canJump && !frozen) {
       p.vel.y = WORLD.JUMP; p.onGround = false; p.wantJumpAt = 0; p.jumpedAt = now; p.lastGroundAt = 0;
     }
     // vertical
@@ -48,6 +49,12 @@ setInterval(moveTick, 1000 / 60);
 
 // ---------- phone inputs ----------
 function wantJump(p) { p.wantJumpAt = Date.now(); }
+// {t:'jump'} = tap, {t:'jump', down:true} = pressed and held, {t:'jump', down:false} = released
+function onJump(p, m) {
+  if (m.down === false) { p.jumpHeld = false; return; }
+  p.wantJumpAt = Date.now();
+  p.jumpHeld = m.down === true;
+}
 function onMove(p, m) { p.moveDir = clamp(Math.round(Number(m.dir) || 0), -1, 1); }
 function onEmoji(p, m) {
   const now = Date.now();
@@ -126,4 +133,4 @@ function publicGames() {
 
 function publicWorld() { return { w: WORLD.W, h: WORLD.H, platforms: WORLD.PLATFORMS }; }
 
-module.exports = { wantJump, onMove, onEmoji, zoneOccupants, kickOut, publicGames, publicWorld };
+module.exports = { wantJump, onJump, onMove, onEmoji, zoneOccupants, kickOut, publicGames, publicWorld };

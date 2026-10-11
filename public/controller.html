@@ -262,7 +262,7 @@
     screen = m.screen;
     for (const el of document.querySelectorAll('.screen[id^="s-"]')) el.classList.toggle('hidden', el.id !== 's-' + m.screen);
     $('#controls').classList.toggle('hidden', m.screen !== 'lobby');
-    if (m.screen !== 'lobby') { held.clear(); sendMove(); }
+    if (m.screen !== 'lobby') { held.clear(); padTouches.clear(); sendMove(); jumpTouches.clear(); send({ t: 'jump', down: false }); }
     if (m.screen !== 'bumper') stickRelease();
     $('#misfire').classList.remove('on');
     if (m.opponentColor) document.documentElement.style.setProperty('--opp', m.opponentColor);
@@ -425,7 +425,9 @@
     const r = el.getBoundingClientRect();
     return x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad;
   }
-  function doJump() { jumpBtn.classList.add('down'); send({ t: 'jump' }); vibrate(20); }
+  // press = jump now and keep hopping on every landing while held; release = stop
+  function doJump() { jumpBtn.classList.add('down'); send({ t: 'jump', down: true }); vibrate(20); }
+  function endJump() { jumpBtn.classList.remove('down'); send({ t: 'jump', down: false }); }
   const controlsEl = $('#controls');
   const jumpTouches = new Set();
   controlsEl.addEventListener('touchstart', (ev) => {
@@ -450,7 +452,7 @@
   const endTouch = (ev) => {
     for (const t of ev.changedTouches) {
       if (padTouches.delete(t.identifier)) sendMove();
-      if (jumpTouches.delete(t.identifier) && !jumpTouches.size) jumpBtn.classList.remove('down');
+      if (jumpTouches.delete(t.identifier) && !jumpTouches.size) endJump();
     }
   };
   controlsEl.addEventListener('touchend', endTouch);
@@ -459,11 +461,11 @@
   controlsEl.addEventListener('pointerdown', (ev) => {
     if (ev.pointerType === 'touch') return;
     if (inRect(padEl, ev.clientX, ev.clientY, 24)) { padTouches.set('mouse', padDirAt(ev.clientX) || -1); sendMove(); }
-    else if (inRect(jumpBtn, ev.clientX, ev.clientY, 16)) { doJump(); setTimeout(() => jumpBtn.classList.remove('down'), 120); }
+    else if (inRect(jumpBtn, ev.clientX, ev.clientY, 16)) { doJump(); setTimeout(endJump, 150); }
   });
   document.addEventListener('pointermove', (ev) => { if (ev.pointerType !== 'touch' && padTouches.has('mouse')) { const d = padDirAt(ev.clientX); if (d) padTouches.set('mouse', d); sendMove(); } });
   document.addEventListener('pointerup', (ev) => { if (ev.pointerType !== 'touch' && padTouches.delete('mouse')) sendMove(); });
-  document.addEventListener('visibilitychange', () => { if (document.hidden) { held.clear(); padTouches.clear(); sendMove(); } });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { held.clear(); padTouches.clear(); sendMove(); jumpTouches.clear(); endJump(); } });
   // left-handed option: jump on the left, ◀ ▶ on the right
   let swap = false;
   try { swap = localStorage.getItem('swap') === '1'; } catch (e) {}
@@ -473,11 +475,12 @@
   if (SIM) {
     document.addEventListener('keydown', (e) => {
       const i = '12345678'.indexOf(e.key); if (i >= 0) send({ t: 'emoji', e: EMOJIS[i] });
-      if (e.key === 'ArrowUp' && !e.repeat) send({ t: 'jump' });
+      if (e.key === 'ArrowUp' && !e.repeat) send({ t: 'jump', down: true });
       if (e.key === 'ArrowLeft' && !e.repeat) { held.add(-1); sendMove(); }
       if (e.key === 'ArrowRight' && !e.repeat) { held.add(1); sendMove(); }
     });
     document.addEventListener('keyup', (e) => {
+      if (e.key === 'ArrowUp') send({ t: 'jump', down: false });
       if (e.key === 'ArrowLeft') { held.delete(-1); sendMove(); }
       if (e.key === 'ArrowRight') { held.delete(1); sendMove(); }
     });
