@@ -73,6 +73,18 @@
   .pulse { animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
 
+  /* ---------- bumper ---------- */
+  #bumper { background: #0d0a1a; }
+  #ring { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .bhud { position: absolute; top: 56px; left: 24px; right: 24px; display: flex; align-items: baseline; gap: 24px; text-shadow: 0 2px 8px rgba(0,0,0,0.8); }
+  .bround { font-size: 22px; font-weight: 900; color: #ffd740; letter-spacing: 2px; }
+  .btime { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; color: #fff; }
+  .btime.low { color: #ff5252; }
+  .balive { margin-left: auto; font-size: 16px; color: #c9c3e6; }
+  .bbanner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; font-size: 72px; font-weight: 900; text-shadow: 0 6px 40px rgba(0,0,0,0.8); pointer-events: none; }
+  .bbanner small { font-size: 22px; font-weight: 600; color: #ddd; }
+  .bbanner .rank { font-size: 18px; color: #bbb; font-weight: 500; }
+
   /* ---------- debug overlay ---------- */
   #debug { position: fixed; inset: 44px 0 0 0; background: rgba(10,10,12,0.96); z-index: 30; overflow: auto; padding: 16px; display: grid; grid-template-columns: 1fr 300px; gap: 16px; }
   #cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; align-content: start; }
@@ -161,6 +173,22 @@
 <div id="flash"></div>
 <div id="fireword">FIRE!</div>
 
+<!-- ---------- BUMPER ---------- -->
+<section id="bumper" class="scene hidden">
+  <canvas id="ring"></canvas>
+  <div class="bhud">
+    <div class="bround" id="bround">碰碰車</div>
+    <div class="btime" id="btime"></div>
+    <div class="balive" id="balive"></div>
+  </div>
+  <div class="bbanner hidden" id="bbanner"></div>
+  <div class="duelbar">
+    <div class="queue">推人出圈，最後站著的人贏。15 秒後圈會開始縮小。</div>
+    <button id="bskipBtn" class="ghost">結束這場</button>
+    <button id="bstopBtn" class="ghost">回大廳</button>
+  </div>
+</section>
+
 <!-- ---------- DEBUG OVERLAY ---------- -->
 <section id="debug" class="hidden">
   <div id="cards"></div>
@@ -202,6 +230,9 @@
     fire: () => gunshot(),
     win: () => { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, 'triangle', 0.22, i * 0.11)); },
     fail: () => { tone(200, 0.3, 'sawtooth', 0.15); tone(150, 0.4, 'sawtooth', 0.15, 0.2); },
+    bump: (force) => { const c = audio(); if (!c) return; const g = Math.min(0.5, 0.08 + (force || 0) * 0.03); tone(120 + Math.random() * 60, 0.08, 'square', g); },
+    dash: () => { const c = audio(); if (!c) return; const o = c.createOscillator(), g = c.createGain(); o.type = 'sawtooth'; o.frequency.setValueAtTime(300, c.currentTime); o.frequency.exponentialRampToValueAtTime(900, c.currentTime + 0.15); g.gain.setValueAtTime(0.12, c.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + 0.2); o.connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + 0.25); },
+    out: () => { const c = audio(); if (!c) return; const o = c.createOscillator(), g = c.createGain(); o.type = 'triangle'; o.frequency.setValueAtTime(600, c.currentTime); o.frequency.exponentialRampToValueAtTime(120, c.currentTime + 0.5); g.gain.setValueAtTime(0.25, c.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + 0.55); o.connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + 0.6); },
   };
   document.addEventListener('pointerdown', audio, { once: true });
   document.addEventListener('keydown', audio, { once: true });
@@ -217,6 +248,9 @@
       if (m.t === 'state') { state = m; if (m.joinUrl) $('#url').textContent = m.joinUrl; }
       else if (m.t === 'event') logEvent(m);
       else if (m.t === 'fire') onFire();
+      else if (m.t === 'bumper:bump') { bumps.push({ x: m.x, y: m.y, at: Date.now(), force: m.force }); sfx.bump(m.force); }
+      else if (m.t === 'bumper:dash') sfx.dash();
+      else if (m.t === 'bumper:out') sfx.out();
     };
     ws.onclose = () => { $('#conn').textContent = '斷線，重連中…'; $('#conn').className = 'off'; setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 5000); };
     ws.onerror = () => { try { ws.close(); } catch (e) {} };
@@ -469,11 +503,121 @@
     }
   }
 
+  // ---------- bumper (top-down sumo ring) ----------
+  const ring = $('#ring'), rctx = ring.getContext('2d');
+  const bumps = [];                 // recent collision sparks
+  const trails = new Map();         // pid -> [{x, y, at}]
+  let bumperResultKey = '';
+  $('#bskipBtn').addEventListener('click', () => cmd('skip'));
+  $('#bstopBtn').addEventListener('click', () => cmd('stop'));
+  function renderBumper() {
+    const b = state.game.bumper;
+    const box = ring.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.max(1, Math.round(box.width)), H = Math.max(1, Math.round(box.height));
+    if (ring.width !== W * dpr || ring.height !== H * dpr) { ring.width = W * dpr; ring.height = H * dpr; }
+    rctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const now = Date.now(), t = now / 1000;
+    const cx = W / 2, cy = H / 2 + 24;
+    const scale = Math.min(W, H - 140) * 0.46 / b.ringRadius;
+    const px = (x) => cx + x * scale, py = (y) => cy + y * scale;
+
+    // floor
+    const bg = rctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W, H) * 0.7);
+    bg.addColorStop(0, '#1b1538'); bg.addColorStop(1, '#0b0916');
+    rctx.fillStyle = bg; rctx.fillRect(0, 0, W, H);
+    // outer (original) ring, faint
+    rctx.strokeStyle = 'rgba(255,255,255,0.08)'; rctx.lineWidth = 2;
+    rctx.beginPath(); rctx.arc(cx, cy, b.ringRadius * scale, 0, Math.PI * 2); rctx.stroke();
+    // current ring: wooden dohyo with a danger edge
+    const R = b.radius * scale;
+    const floor = rctx.createRadialGradient(cx, cy, R * 0.2, cx, cy, R);
+    floor.addColorStop(0, '#6b4e2e'); floor.addColorStop(1, '#4a3420');
+    rctx.fillStyle = floor; rctx.beginPath(); rctx.arc(cx, cy, R, 0, Math.PI * 2); rctx.fill();
+    for (let i = 1; i < 4; i++) { rctx.strokeStyle = 'rgba(0,0,0,0.15)'; rctx.lineWidth = 1; rctx.beginPath(); rctx.arc(cx, cy, R * i / 4, 0, Math.PI * 2); rctx.stroke(); }
+    const shrinking = b.radius < b.ringRadius - 0.01;
+    rctx.strokeStyle = shrinking ? `rgba(255,82,82,${0.6 + 0.4 * Math.sin(t * 6)})` : '#f3e2b0';
+    rctx.lineWidth = 6; rctx.beginPath(); rctx.arc(cx, cy, R, 0, Math.PI * 2); rctx.stroke();
+
+    // sparks
+    for (let i = bumps.length - 1; i >= 0; i--) {
+      const s = bumps[i], age = (now - s.at) / 350;
+      if (age >= 1) { bumps.splice(i, 1); continue; }
+      rctx.strokeStyle = `rgba(255,235,130,${1 - age})`; rctx.lineWidth = 3;
+      for (let k = 0; k < 6; k++) {
+        const a = k / 6 * Math.PI * 2 + s.at % 7, r0 = 6 + age * 26, r1 = r0 + 10 + Math.min(20, (s.force || 0) * 2);
+        rctx.beginPath(); rctx.moveTo(px(s.x) + Math.cos(a) * r0, py(s.y) + Math.sin(a) * r0); rctx.lineTo(px(s.x) + Math.cos(a) * r1, py(s.y) + Math.sin(a) * r1); rctx.stroke();
+      }
+    }
+
+    // bodies: eliminated ones fall away first (drawn under), then the living
+    const bodies = [...b.bodies].sort((p, q) => (p.alive === q.alive ? 0 : p.alive ? 1 : -1));
+    const r = b.bodyR * scale;
+    for (const p of bodies) {
+      let x = px(p.x), y = py(p.y), size = 1, alpha = 1;
+      if (!p.alive) {
+        const age = (now - p.outAt) / 900;
+        if (age >= 1) continue;
+        size = 1 - age * 0.7; alpha = 1 - age;
+        const dir = Math.atan2(p.y, p.x); x += Math.cos(dir) * age * 60; y += Math.sin(dir) * age * 60 + age * age * 120;
+      }
+      // trail while dashing
+      let tr = trails.get(p.pid); if (!tr) { tr = []; trails.set(p.pid, tr); }
+      if (p.alive && p.dashing) tr.push({ x, y, at: now });
+      while (tr.length && now - tr[0].at > 250) tr.shift();
+      for (const q of tr) { const a = 1 - (now - q.at) / 250; rctx.fillStyle = p.color; rctx.globalAlpha = a * 0.35; rctx.beginPath(); rctx.arc(q.x, q.y, r * a, 0, Math.PI * 2); rctx.fill(); }
+      rctx.globalAlpha = alpha;
+      // shadow + body
+      rctx.fillStyle = 'rgba(0,0,0,0.35)'; rctx.beginPath(); rctx.ellipse(x + 3, y + 5, r * size, r * size * 0.9, 0, 0, Math.PI * 2); rctx.fill();
+      rctx.fillStyle = p.color; rctx.beginPath(); rctx.arc(x, y, r * size, 0, Math.PI * 2); rctx.fill();
+      if (p.dashing) { rctx.strokeStyle = '#fff'; rctx.lineWidth = 4; rctx.stroke(); }
+      else if (state.game.champion === p.pid) { rctx.strokeStyle = '#ffd740'; rctx.lineWidth = 3; rctx.stroke(); }
+      // eyes look where the stick points
+      const fx = p.face.x, fy = p.face.y;
+      rctx.fillStyle = '#fff';
+      rctx.beginPath(); rctx.arc(x + fx * r * 0.35 - fy * r * 0.3, y + fy * r * 0.35 + fx * r * 0.3, r * 0.22, 0, Math.PI * 2); rctx.fill();
+      rctx.beginPath(); rctx.arc(x + fx * r * 0.35 + fy * r * 0.3, y + fy * r * 0.35 - fx * r * 0.3, r * 0.22, 0, Math.PI * 2); rctx.fill();
+      rctx.fillStyle = '#111';
+      rctx.beginPath(); rctx.arc(x + fx * r * 0.48 - fy * r * 0.3, y + fy * r * 0.48 + fx * r * 0.3, r * 0.11, 0, Math.PI * 2); rctx.fill();
+      rctx.beginPath(); rctx.arc(x + fx * r * 0.48 + fy * r * 0.3, y + fy * r * 0.48 - fx * r * 0.3, r * 0.11, 0, Math.PI * 2); rctx.fill();
+      // name + dash readiness pip
+      rctx.font = '700 14px system-ui, "Noto Sans TC", sans-serif'; rctx.textAlign = 'center'; rctx.textBaseline = 'bottom';
+      rctx.fillStyle = 'rgba(0,0,0,0.6)'; rctx.fillText(p.name, x + 1, y - r - 5);
+      rctx.fillStyle = '#fff'; rctx.fillText(p.name, x, y - r - 6);
+      if (p.alive) { rctx.fillStyle = p.dashReady ? '#ff6e40' : 'rgba(255,255,255,0.2)'; rctx.beginPath(); rctx.arc(x, y + r + 9, 4, 0, Math.PI * 2); rctx.fill(); }
+      rctx.globalAlpha = 1;
+    }
+
+    // HUD
+    $('#bround').textContent = `碰碰車 · ROUND ${b.round}`;
+    const tl = Math.ceil(b.timeLeft);
+    $('#btime').textContent = b.phase === 'play' ? `${Math.floor(tl / 60)}:${String(tl % 60).padStart(2, '0')}` : '';
+    $('#btime').classList.toggle('low', tl <= 10);
+    const alive = b.bodies.filter((p) => p.alive).length;
+    $('#balive').textContent = `${alive} / ${b.bodies.length} 人還在圈內${shrinking ? ' · 圈在縮小' : ''}`;
+    const banner = $('#bbanner');
+    if (b.phase === 'ready') {
+      const left = Math.ceil((b.readyMs - (now - b.phaseAt)) / 1000);
+      banner.classList.remove('hidden'); banner.innerHTML = `${left > 0 ? left : 'GO!'}<small>推人出圈，最後站著的人贏</small>`;
+    } else if (b.phase === 'result' && b.result) {
+      banner.classList.remove('hidden');
+      const w = b.result.winner ? b.bodies.find((p) => p.pid === b.result.winner) : null;
+      banner.innerHTML = (w ? `<span style="color:${w.color}">${w.name}</span> 勝！` : '沒有贏家') +
+        `<div class="rank">${b.result.names.map((n, i) => `${i + 1}. ${n}`).join('　')}</div>`;
+      const key = `${b.round}:${b.result.winner}`;
+      if (bumperResultKey !== key) { bumperResultKey = key; if (w) sfx.win(); else sfx.fail(); }
+    } else banner.classList.add('hidden');
+  }
+
   function render() {
     const inDuel = !!state.game.duel;
-    $('#lobby').classList.toggle('hidden', !!inDuel);
+    const inBumper = !!state.game.bumper;
+    $('#lobby').classList.toggle('hidden', inDuel || inBumper);
     $('#duel').classList.toggle('hidden', !inDuel);
-    if (inDuel) renderDuel(); else { renderLobby(); lastPhaseKey = ''; }
+    $('#bumper').classList.toggle('hidden', !inBumper);
+    if (inDuel) renderDuel();
+    else if (inBumper) renderBumper();
+    else { renderLobby(); lastPhaseKey = ''; bumperResultKey = ''; trails.clear(); bumps.length = 0; }
     $('#count').textContent = `${state.players.filter((p) => p.connected).length} 位玩家`;
     if (!$('#debug').classList.contains('hidden')) renderDebug();
     requestAnimationFrame(render);

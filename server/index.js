@@ -59,6 +59,7 @@ function handleController(ws, hello) {
       case 'btn': P.onButton(p, m); break;
       case 'calib': p.neutral = null; break;
       case 'name': p.name = String(m.name || '').slice(0, 16) || p.name; break;
+      default: games.onMessage(p, m, receivedAt);
     }
   });
   ws.on('close', () => { if (P.leave(p, ws)) phones.pushPhoneScreens(); });

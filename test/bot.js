@@ -24,6 +24,10 @@ ws.on('open', () => {
     if (behavior === 'wander' && Date.now() < shakeUntil) { ax = 20; ay = 6; }
     send({ t: 'motion', ts: Date.now(), alpha: 0, beta, gamma: 0, ax, ay, az });
   }, 33);
+  if (behavior === 'bumperfan') {
+    // heads straight for the bumper zone at the left edge of the map and waits there
+    setInterval(() => { if (screen === 'lobby') send({ t: 'move', dir: -1 }); }, 500);
+  }
   if (behavior === 'wander') {
     // stroll: pick a direction, hold it a while, sometimes stop; hop and chat now and then
     const stroll = () => {
@@ -41,10 +45,26 @@ ws.on('open', () => {
   }
 });
 
+// bumper: wander around the ring with a random heading that drifts, dash now and then
+let bumperTimer = null;
+function bumperPlay(on) {
+  clearInterval(bumperTimer); bumperTimer = null;
+  if (!on) { send({ t: 'stick', x: 0, y: 0 }); return; }
+  let heading = Math.random() * Math.PI * 2;
+  let nextDash = Date.now() + 1000 + Math.random() * 2000;
+  bumperTimer = setInterval(() => {
+    heading += (Math.random() - 0.5) * 0.6;
+    send({ t: 'stick', x: Math.cos(heading) * 0.8, y: Math.sin(heading) * 0.8 });
+    if (Date.now() > nextDash) { send({ t: 'dash' }); nextDash = Date.now() + 1500 + Math.random() * 2500; }
+  }, 100);
+}
+
 ws.on('message', (d) => {
   const m = JSON.parse(d);
   if (m.t === 'ping') { send({ t: 'pong', s: m.s, c: Date.now() }); return; }
   if (m.t !== 'game') return;
+  if (m.screen === 'bumper' && m.phase === 'play' && m.alive) { if (!bumperTimer) bumperPlay(true); }
+  else if (bumperTimer) bumperPlay(false);
   screen = m.screen;
   log('screen', m.screen, m.outcome || '', m.reason || '', m.myReaction != null ? m.myReaction + 'ms' : '');
   switch (m.screen) {

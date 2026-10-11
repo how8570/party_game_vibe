@@ -102,11 +102,15 @@ function zoneTick(now) {
   }
 }
 
-// Launch an avatar out of the zone (loser after a game) so the slot opens up.
+// Launch an avatar out of its zone towards the middle of the map so the slot opens up.
 function kickOut(p) {
   if (!p) return;
-  p.pos.x = WORLD.KICK.x; p.pos.y = 0.6; p.vel.x = WORLD.KICK.vx; p.vel.y = WORLD.KICK.vy; p.onGround = false;
-  p.zone = null; p.zoneSince = 0; p.facing = -1;
+  const g = GAMES.find((z) => p.pos.x >= z.zone.x0 - 0.5 && p.pos.x <= z.zone.x1 + 0.5);
+  const toRight = g ? (g.zone.x0 + g.zone.x1) / 2 < WORLD.W / 2 : p.pos.x < WORLD.W / 2;
+  p.pos.x = g ? (toRight ? g.zone.x1 + 0.6 : g.zone.x0 - 0.6) : p.pos.x;
+  p.pos.y = 0.6; p.onGround = false;
+  p.vel.x = toRight ? WORLD.KICK.speed : -WORLD.KICK.speed; p.vel.y = WORLD.KICK.vy;
+  p.zone = null; p.zoneSince = 0; p.facing = toRight ? 1 : -1;
   send(p.ws, { t: 'zone', game: null, name: null });
 }
 bus.on('player:kick', (pid) => kickOut(players.get(pid)));

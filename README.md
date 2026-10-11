@@ -4,7 +4,7 @@ PC 開一個大螢幕頁面，手機掃 QR code 進來當控制器，不用裝 A
 
 - **大廳**：2D 平台跳躍的夜景地圖。手機橫拿，◀ ▶ 跑、「跳」跳、按 emoji 冒泡泡。地圖兩端是遊戲區，走進去站滿人數就自動開始。
 - **快槍手**（1-2-Switch 式）：兩人把手機垂在身側，聽到槍聲最快舉起並點螢幕的人贏；提早動就是搶跑直接輸。贏家戴皇冠留在擂台，輸家被彈出去，下一個走進來的人接著挑戰。
-- **碰碰車**：地圖左邊已經畫了入口，還沒做。
+- **碰碰車**（相撲圈）：2 到 8 人，地圖左端的入口站滿 2 人後開 5 秒加入窗口。手機上按住螢幕拖曳當搖桿、右下角「衝刺」。碰撞用等質量彈性碰撞，衝刺中撞到人會多推一把。15 秒後圈開始縮小，出圈淘汰，最後站著的贏；75 秒到時離圓心最近的贏。結束後所有人被彈出入口，重新聚集才會再開。參數在 `config.js` 的 `BUMPER`。
 
 ## 啟動
 
@@ -43,6 +43,7 @@ server/
   games/
     index.js        遊戲註冊表：zone:ready 事件 → 啟動對應遊戲
     quickdraw.js    快槍手狀態機
+    bumper.js       碰碰車：搖桿、碰撞、衝刺、縮圈、淘汰
 public/
   display.html      PC 大螢幕：大廳地圖、對決畫面、合成音效、輸入檢視（按 D）
   controller.html   手機頁：加入、大廳控制、對決各畫面、鍵盤模擬
@@ -75,9 +76,9 @@ lobby ──兩人站進擂台 1 秒──▶ intro (3.5s) ──▶ holster ─
 
 ## 協定（JSON over WebSocket）
 
-手機 → 伺服器：`hello {role:'controller', pid, name}`、`motion {ts, alpha, beta, gamma, ax, ay, az}`（約 30 Hz）、`pong {s, c}`、`move {dir: -1|0|1}`、`jump`、`emoji {e}`、`shot {ts, beta}`、`calib`。
+手機 → 伺服器：`hello {role:'controller', pid, name}`、`motion {ts, alpha, beta, gamma, ax, ay, az}`（約 30 Hz）、`pong {s, c}`、`move {dir: -1|0|1}`、`jump`、`emoji {e}`、`shot {ts, beta}`、`stick {x, y}`（碰碰車搖桿，-1..1）、`dash`、`calib`。核心不認得的訊息會交給進行中的遊戲模組的 `onMessage`。
 
-伺服器 → 手機：`welcome`、`ping {s}`、`game {screen, …}`（lobby / spectate / intro / holster / wait / fire / result）、`zone {game, name, comingSoon}`、`holster {ok}`、`misfire`、`haptic {ms}`。
+伺服器 → 手機：`welcome`、`ping {s}`、`game {screen, …}`（lobby / spectate / intro / holster / wait / fire / result / bumper / bumper-result）、`zone {game, name, comingSoon}`、`holster {ok}`、`misfire`、`haptic {ms}`。
 
 伺服器 → 顯示頁（30 Hz）：`state {world, players[], game:{mode, champion, games[], duel}}`，另有 `event` 與 `fire`。顯示頁 → 伺服器：`cmd {cmd:'start'|'stop'|'skip'|'reset'}`。
 

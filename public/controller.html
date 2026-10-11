@@ -86,6 +86,20 @@
   #misfire.on { animation: fade 1s ease-out; }
   @keyframes fade { 0% { opacity: 1; } 100% { opacity: 0; } }
 
+  /* bumper */
+  .bumper { background: #0d0a1a; padding: 0; justify-content: flex-start; }
+  .bstatus { position: fixed; top: max(48px, calc(env(safe-area-inset-top) + 36px)); left: 0; right: 0; text-align: center; font-size: 18px; font-weight: 700; color: #ffd740; z-index: 3; pointer-events: none; }
+  .stickArea { position: fixed; inset: 0; touch-action: none; }
+  .stickBase { position: absolute; width: 150px; height: 150px; margin: -75px 0 0 -75px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.06); display: none; }
+  .stickBase.on { display: block; }
+  .stickKnob { position: absolute; left: 50%; top: 50%; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%; background: var(--accent); box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
+  .stickHint { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); text-align: center; color: #555; font-size: 16px; pointer-events: none; }
+  .dash { position: fixed; right: max(18px, env(safe-area-inset-right)); bottom: max(22px, env(safe-area-inset-bottom)); width: 118px; height: 118px; border-radius: 50%; border: 0; background: #ff6e40; color: #000; font-size: 26px; font-weight: 900; box-shadow: 0 4px 16px rgba(0,0,0,0.5); z-index: 4; }
+  .dash:active, .dash.down { filter: brightness(0.8); transform: scale(0.95); }
+  .dash.cool { background: #5a3a30; color: #a88; }
+  #s-bumper-result.win { background: #1b5e20; }
+  #s-bumper-result.lose { background: #3a2a4a; }
+
   /* keyboard simulator (PC testing with ?sim) */
   #sim { position: fixed; left: 8px; right: 8px; top: 44px; background: rgba(0,0,0,0.75); border: 1px solid #333; border-radius: 10px; padding: 8px 10px; font-size: 12px; color: #aaa; z-index: 9; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   #sim b { color: #fff; }
@@ -165,6 +179,21 @@
 </div>
 <div id="misfire">還沒舉起來！</div>
 
+<!-- bumper: drag anywhere to steer, big dash button bottom-right -->
+<div id="s-bumper" class="screen bumper hidden">
+  <div class="bstatus" id="bumperStatus">準備…</div>
+  <div class="stickArea" id="stickArea">
+    <div class="stickBase" id="stickBase"><div class="stickKnob" id="stickKnob"></div></div>
+    <div class="stickHint" id="stickHint">按住螢幕任何地方拖曳來移動</div>
+  </div>
+  <button id="dash" class="dash">衝刺</button>
+</div>
+<div id="s-bumper-result" class="screen duel hidden">
+  <div class="huge" id="bumpTitle"></div>
+  <p id="bumpSub" style="color:#eee;font-size:18px"></p>
+  <p id="bumpWins"></p>
+</div>
+
 <div id="sim" class="hidden"><b>模擬鍵盤：</b><span class="k">H</span> 垂下 <span class="k">R</span> 舉起 <span class="k">Space</span> 開槍 <span class="k">←→</span> 跑 <span class="k">↑</span> 跳 <span class="k">↓</span> 後仰 <span class="k">S</span> 搖晃 <span class="k">1-8</span> emoji <span id="simState"></span></div>
 
 <script>
@@ -231,9 +260,10 @@
   }
   function showScreen(m) {
     screen = m.screen;
-    for (const s of SCREENS) $('#s-' + s).classList.toggle('hidden', s !== m.screen);
+    for (const el of document.querySelectorAll('.screen[id^="s-"]')) el.classList.toggle('hidden', el.id !== 's-' + m.screen);
     $('#controls').classList.toggle('hidden', m.screen !== 'lobby');
     if (m.screen !== 'lobby') { held.clear(); sendMove(); }
+    if (m.screen !== 'bumper') stickRelease();
     $('#misfire').classList.remove('on');
     if (m.opponentColor) document.documentElement.style.setProperty('--opp', m.opponentColor);
     switch (m.screen) {
@@ -242,6 +272,21 @@
         $('#spQueue').textContent = `${m.game || ''} 進行中。結束後走進遊戲區就能挑戰冠軍`;
         held.clear();
         break;
+      case 'bumper':
+        $('#bumperStatus').textContent = m.phase === 'ready' ? `${m.players} 人混戰，準備…` : m.alive ? '推人出圈！最後站著的人贏' : '你出圈了，看別人打';
+        $('#stickHint').classList.toggle('hidden', m.phase !== 'ready' && !m.alive ? true : false);
+        $('#dash').classList.toggle('hidden', !m.alive);
+        if (m.phase === 'ready') vibrate([60, 60, 60]);
+        break;
+      case 'bumper-result': {
+        const el = $('#s-bumper-result');
+        el.classList.remove('win', 'lose'); el.classList.add(m.outcome);
+        $('#bumpTitle').textContent = m.outcome === 'win' ? '你贏了！' : `第 ${m.rank} 名`;
+        $('#bumpSub').textContent = m.outcome === 'win' ? `${m.total} 人裡最後站著的` : (m.winner ? `${m.winner} 贏了` : '沒有贏家');
+        $('#bumpWins').textContent = `你目前 ${m.wins} 勝`;
+        vibrate(m.outcome === 'win' ? [80, 60, 80, 60, 160] : 200);
+        break;
+      }
       case 'intro': $('#introRound').textContent = m.round; $('#introOpp').textContent = m.opponent; vibrate([60, 60, 60]); break;
       case 'holster': setHolster(!!m.ok); break;
       case 'wait': break;
@@ -406,6 +451,55 @@
       if (e.key === 'ArrowDown') { if (latest.beta !== -80) latest.beta = 45; show(); }
     });
     show();
+  }
+
+  // ---- bumper: virtual stick (drag anywhere) + dash ----
+  const stickArea = $('#stickArea'), stickBase = $('#stickBase'), stickKnob = $('#stickKnob');
+  const STICK_R = 60;
+  let stickId = null, stickOrigin = null, stick = { x: 0, y: 0 }, lastStickSend = 0, stickDirty = false;
+  function setStick(x, y) { stick = { x, y }; stickDirty = true; stickKnob.style.transform = `translate(${x * STICK_R}px, ${y * STICK_R}px)`; }
+  function stickRelease() {
+    stickId = null; stickOrigin = null; stickBase.classList.remove('on');
+    if (stick.x || stick.y) { setStick(0, 0); send({ t: 'stick', x: 0, y: 0 }); stickDirty = false; }
+  }
+  stickArea.addEventListener('pointerdown', (ev) => {
+    if (stickId != null) return;
+    ev.preventDefault();
+    stickId = ev.pointerId; stickOrigin = { x: ev.clientX, y: ev.clientY };
+    stickBase.style.left = ev.clientX + 'px'; stickBase.style.top = ev.clientY + 'px'; stickBase.classList.add('on');
+    $('#stickHint').classList.add('hidden');
+    try { stickArea.setPointerCapture(ev.pointerId); } catch (e) {}
+    setStick(0, 0);
+  });
+  stickArea.addEventListener('pointermove', (ev) => {
+    if (ev.pointerId !== stickId) return;
+    let dx = (ev.clientX - stickOrigin.x) / STICK_R, dy = (ev.clientY - stickOrigin.y) / STICK_R;
+    const l = Math.hypot(dx, dy);
+    if (l > 1) { dx /= l; dy /= l; }
+    setStick(dx, dy);
+  });
+  for (const t of ['pointerup', 'pointercancel']) stickArea.addEventListener(t, (ev) => { if (ev.pointerId === stickId) stickRelease(); });
+  setInterval(() => { if (stickDirty && Date.now() - lastStickSend >= 33) { send({ t: 'stick', x: stick.x, y: stick.y }); lastStickSend = Date.now(); stickDirty = false; } }, 16);
+  const dashBtn = $('#dash');
+  dashBtn.addEventListener('pointerdown', (ev) => {
+    ev.preventDefault(); ev.stopPropagation();
+    send({ t: 'dash' }); vibrate(20);
+    dashBtn.classList.add('cool'); setTimeout(() => dashBtn.classList.remove('cool'), 1400);
+  });
+  if (SIM) {
+    const simKeys = new Set();
+    const simStick = () => {
+      const x = (simKeys.has('ArrowRight') ? 1 : 0) - (simKeys.has('ArrowLeft') ? 1 : 0);
+      const y = (simKeys.has('ArrowDown') ? 1 : 0) - (simKeys.has('ArrowUp') ? 1 : 0);
+      const l = Math.hypot(x, y) || 1;
+      setStick(x / l, y / l);
+    };
+    document.addEventListener('keydown', (e) => {
+      if (screen !== 'bumper') return;
+      if (e.key.startsWith('Arrow')) { e.preventDefault(); simKeys.add(e.key); simStick(); }
+      if (e.key === ' ' && !e.repeat) { e.preventDefault(); send({ t: 'dash' }); }
+    }, true);
+    document.addEventListener('keyup', (e) => { if (screen === 'bumper' && e.key.startsWith('Arrow')) { simKeys.delete(e.key); simStick(); } }, true);
   }
 
   // ---- join ----

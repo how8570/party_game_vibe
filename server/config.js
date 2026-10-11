@@ -33,15 +33,27 @@ module.exports = {
       { x: 8.8, y: 5.6, w: 2.4 },
     ],
     SPAWN: { x0: 6, x1: 14, y: 7 },   // newcomers drop in from the sky, between the game zones
-    KICK: { x: 13, vx: -5, vy: 7 },   // where a loser gets launched after a game
+    KICK: { speed: 5, vy: 7 },        // how hard a loser gets launched out of a zone, towards the middle of the map
     EMOJI_MS: 2500, EMOJI_RATE_MS: 350,
   },
 
   // Game registry: each game owns a zone on the lobby ground. Stand inside with enough people and it starts.
   GAMES: [
     { id: 'quickdraw', name: '快槍手', min: 2, max: 2, zone: { x0: 15.4, x1: 19.6 }, holdMs: 1000, countdownMs: 0 },
-    { id: 'bumper', name: '碰碰車', min: 2, max: 8, zone: { x0: 0.4, x1: 4.6 }, holdMs: 1000, countdownMs: 5000, comingSoon: true },
+    { id: 'bumper', name: '碰碰車', min: 2, max: 8, zone: { x0: 0.4, x1: 4.6 }, holdMs: 1000, countdownMs: 5000 },
   ],
+
+  // Bumper (sumo). Arena units: ring radius 6, bodies radius 0.5.
+  BUMPER: {
+    RADIUS: 6, MIN_RADIUS: 2.2, BODY_R: 0.55,
+    ACCEL: 30, DAMPING: 4.5, MAX_SPEED: 7,
+    DASH_SPEED: 17, DASH_MS: 220, DASH_COOLDOWN_MS: 1400,
+    BOUNCE: 1.0,          // 1.0 = fully elastic exchange along the collision normal
+    SHOVE: 9,             // extra push a dashing body gives the one it hits
+    READY_MS: FAST ? 300 : 3000,
+    SHRINK_AFTER_S: 15, SHRINK_S: 30, TIME_LIMIT_S: 75,
+    RESULT_MS: FAST ? 400 : 6000,
+  },
 
   // Quick Draw. beta = pitch: +90 upright (top up), 0 flat, -90 top pointing at the floor.
   QD: {
