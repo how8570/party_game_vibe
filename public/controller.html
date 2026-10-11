@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#111">
+<title>Quick Draw Controller</title>
+<style>
+  :root { --bg: #111; --fg: #eee; --accent: #40c4ff; --opp: #888; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; touch-action: none; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans TC", sans-serif; overflow: hidden; }
+  .screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom)); gap: 16px; text-align: center; }
+  .hidden { display: none !important; }
+  h1 { margin: 0; font-size: 28px; }
+  p { margin: 0; color: #aaa; max-width: 320px; line-height: 1.5; }
+  input { width: 100%; max-width: 320px; font-size: 20px; padding: 12px 14px; border-radius: 12px; border: 1px solid #333; background: #1b1b1b; color: var(--fg); text-align: center; outline: none; }
+  .big { width: 100%; max-width: 320px; font-size: 24px; font-weight: 700; padding: 18px; border-radius: 16px; border: 0; background: var(--accent); color: #000; }
+  .big:active { filter: brightness(0.8); }
+  .small { font-size: 14px; padding: 10px 16px; border-radius: 10px; border: 1px solid #333; background: #1b1b1b; color: #bbb; }
+  #err { color: #ff5252; }
+
+  .top { position: fixed; top: max(12px, env(safe-area-inset-top)); left: 16px; right: 16px; display: flex; justify-content: space-between; align-items: center; font-size: 14px; z-index: 5; }
+  .badge { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; }
+  .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); }
+  #status { color: #777; }
+  #status.on { color: #69f0ae; }
+
+  /* lobby */
+  .readout { font-size: 40px; font-weight: 800; letter-spacing: 2px; min-height: 48px; }
+  .sub { font-size: 13px; color: #777; font-variant-numeric: tabular-nums; }
+  /* lobby: emoji + hint on top, big thumb controls pinned to the bottom. Landscape = classic platformer grip. */
+  .lobby { justify-content: flex-start; padding-top: 64px; gap: 12px; }
+  .controls { position: fixed; left: 0; right: 0; bottom: 0; height: 44vh; display: grid; grid-template-columns: 1fr 1fr 1.4fr; gap: 10px; padding: 10px; padding-bottom: max(10px, env(safe-area-inset-bottom)); background: linear-gradient(transparent, rgba(0,0,0,0.5)); }
+  .controls button { border-radius: 26px; border: 2px solid #2a2a2a; background: #1b1b1b; color: #eee; font-size: 52px; font-weight: 900; padding: 0; }
+  .controls button.down, .controls button:active { background: #333; border-color: #555; }
+  .controls .mv[data-dir="-1"] { order: 1; } .controls .mv[data-dir="1"] { order: 2; } .controls .jump { order: 3; }
+  .controls.swap { grid-template-columns: 1.4fr 1fr 1fr; }
+  .controls.swap .jump { order: 0; }
+  .jump { background: var(--accent) !important; color: #000 !important; border-color: var(--accent) !important; letter-spacing: 4px; }
+  .jump.down, .jump:active { filter: brightness(0.8); }
+  .zone { color: #ffd740; font-weight: 700; }
+  .emoji { width: 100%; max-width: 360px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .emoji button { height: 60px; border-radius: 14px; border: 2px solid #2a2a2a; background: #1b1b1b; font-size: 30px; line-height: 1; padding: 0; transition: transform 80ms; }
+  @media (orientation: landscape) {
+    .lobby { padding-top: 48px; gap: 8px; }
+    .lobby p { font-size: 13px; }
+    .emoji { grid-template-columns: repeat(8, 1fr); max-width: 560px; gap: 6px; }
+    .emoji button { height: 40px; font-size: 22px; border-radius: 10px; }
+    .controls { height: 62vh; grid-template-columns: 1fr 1fr 1.2fr; gap: 14px; padding: 0 max(14px, env(safe-area-inset-left)) 14px max(14px, env(safe-area-inset-right)); }
+    .controls.swap { grid-template-columns: 1.2fr 1fr 1fr; }
+    .controls button { font-size: 60px; }
+    #swap { position: fixed; top: max(10px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 6; padding: 6px 12px; font-size: 12px; }
+  }
+  .emoji button:active, .emoji button.pop { transform: scale(0.85); background: var(--accent); }
+  .wait { color: #777; font-size: 16px; }
+  .pulse { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+
+  /* duel screens */
+  .duel { background: var(--bg); }
+  .huge { font-size: 64px; font-weight: 900; line-height: 1.05; letter-spacing: 2px; }
+  .opp { color: var(--opp); font-weight: 800; }
+  .icon { width: 120px; height: 120px; color: var(--accent); transition: transform 200ms; }
+  .icon svg { width: 100%; height: 100%; }
+  .icon.holstered { transform: rotate(80deg); }
+  .check { font-size: 26px; font-weight: 800; color: #ff8a80; }
+  .check.ok { color: #69f0ae; }
+  #s-wait { background: #050505; }
+  #s-wait .huge { color: #333; }
+  #s-fire { background: #d50000; color: #fff; }
+  #s-fire .huge { font-size: 96px; }
+  #s-result.win { background: #1b5e20; }
+  #s-result.lose { background: #4a1010; }
+  #s-result.draw { background: #333; }
+  .react { font-size: 56px; font-weight: 900; font-variant-numeric: tabular-nums; }
+  .react small { font-size: 20px; color: #ccc; font-weight: 600; }
+  .react .lbl { font-size: 14px; color: #bbb; font-weight: 500; display: block; }
+  .two { display: flex; gap: 32px; justify-content: center; }
+  .ring { width: 160px; height: 160px; border-radius: 50%; border: 4px solid #2a2a2a; display: flex; align-items: center; justify-content: center; font-size: 18px; color: #555; }
+  #misfire { position: fixed; left: 0; right: 0; bottom: 20%; text-align: center; font-size: 22px; font-weight: 800; color: #ffd740; opacity: 0; pointer-events: none; }
+  #misfire.on { animation: fade 1s ease-out; }
+  @keyframes fade { 0% { opacity: 1; } 100% { opacity: 0; } }
+
+  /* keyboard simulator (PC testing with ?sim) */
+  #sim { position: fixed; left: 8px; right: 8px; bottom: 8px; background: rgba(0,0,0,0.75); border: 1px solid #333; border-radius: 10px; padding: 8px 10px; font-size: 12px; color: #aaa; z-index: 9; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  #sim b { color: #fff; }
+  #sim .k { padding: 2px 6px; border: 1px solid #555; border-radius: 4px; color: #fff; }
+</style>
+</head>
+<body>
+
+<div id="join" class="screen">
+  <h1>Quick Draw</h1>
+  <p>按下「加入」後，手機會請求動作感測器權限，請允許。</p>
+  <input id="name" placeholder="你的名字（可留空）" maxlength="16" autocomplete="off">
+  <button id="joinBtn" class="big">加入</button>
+  <p id="err"></p>
+</div>
+
+<div id="top" class="top hidden">
+  <div class="badge"><div class="dot" id="dot"></div><span id="who">P?</span></div>
+  <div id="status">連線中…</div>
+</div>
+
+<!-- lobby: shows what the server reads from this phone -->
+<div id="s-lobby" class="screen lobby hidden">
+  <p id="zoneHint">走進遊戲區就會開始。手機橫著拿比較好按</p>
+  <div class="emoji" id="emoji"></div>
+  <button id="swap" class="small">⇄ 左右手互換</button>
+  <div class="sub hidden" id="raw">β 0 γ 0 | a 0.0</div>
+  <div class="readout hidden" id="dir">CENTER</div>
+  <button id="calib" class="small hidden">重新校正</button>
+</div>
+<div id="controls" class="controls hidden">
+  <button class="mv" data-dir="-1">◀</button>
+  <button class="mv" data-dir="1">▶</button>
+  <button id="jump" class="jump">跳</button>
+</div>
+
+<div id="s-spectate" class="screen hidden">
+  <div class="wait">觀戰中</div>
+  <div class="huge" style="font-size:34px"><span id="spA"></span><br><span style="color:#555;font-size:22px">vs</span><br><span id="spB"></span></div>
+  <p id="spQueue"></p>
+</div>
+
+<div id="s-intro" class="screen duel hidden">
+  <div class="wait">ROUND <span id="introRound"></span></div>
+  <div class="huge">你上場了</div>
+  <p>對手：<span class="opp" id="introOpp"></span></p>
+  <p>把手機像槍一樣<b>垂在身側</b>，面向對手。<br>聽到槍聲再舉起來、點螢幕開槍。</p>
+</div>
+
+<div id="s-holster" class="screen duel hidden">
+  <div class="icon" id="holsterIcon"></div>
+  <div class="huge" style="font-size:40px">垂下手機</div>
+  <div class="check" id="holsterCheck">尚未就位</div>
+  <p>手機朝下、貼在大腿旁，保持不動</p>
+</div>
+
+<div id="s-wait" class="screen duel hidden">
+  <div class="huge pulse">• • •</div>
+  <p style="color:#444">別動。聽槍聲。</p>
+</div>
+
+<div id="s-fire" class="screen duel hidden">
+  <div class="huge">FIRE!</div>
+  <p style="color:#fff">舉起來，點螢幕！</p>
+</div>
+
+<div id="s-result" class="screen duel hidden">
+  <div class="huge" id="resTitle"></div>
+  <p id="resReason" style="color:#eee;font-size:18px"></p>
+  <div class="two">
+    <div class="react"><span class="lbl">你</span><span id="resMine">-</span></div>
+    <div class="react"><span class="lbl" id="resOppName">對手</span><span id="resTheirs">-</span></div>
+  </div>
+  <p id="resWins"></p>
+</div>
+<div id="misfire">還沒舉起來！</div>
+
+<div id="sim" class="hidden"><b>模擬鍵盤：</b><span class="k">H</span> 垂下 <span class="k">R</span> 舉起 <span class="k">Space</span> 開槍 <span class="k">←→</span> 跑 <span class="k">↑</span> 跳 <span class="k">↓</span> 後仰 <span class="k">S</span> 搖晃 <span class="k">1-8</span> emoji <span id="simState"></span></div>
+
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const err = $('#err'), status = $('#status');
+  const GUN_SVG = `<svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"><path d="M8 38 H78 a6 6 0 0 1 6 6 v6 a6 6 0 0 1 -6 6 H46 l-6 26 H24 l6 -26 h-8 a6 6 0 0 1 -6 -6 v-4"/><path d="M36 56 l6 10"/><circle cx="18" cy="44" r="2" fill="currentColor"/></svg>`;
+  $('#holsterIcon').innerHTML = GUN_SVG;
+
+  // Persistent player id so a reconnect keeps the same slot/colour.
+  let pid = null;
+  try { pid = localStorage.getItem('pid'); } catch (e) {}
+  if (!pid) { pid = 'p_' + Math.random().toString(36).slice(2, 10); try { localStorage.setItem('pid', pid); } catch (e) {} }
+
+  const SIM = new URLSearchParams(location.search).has('sim');
+  let ws = null, connected = false, backoff = 500;
+  const latest = { alpha: null, beta: null, gamma: null, ax: null, ay: null, az: null };
+  let dirty = false;
+  let screen = 'lobby';
+
+  function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+  function vibrate(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
+
+  function connect() {
+    const name = $('#name').value.trim();
+    ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
+    ws.onopen = () => { backoff = 500; send({ t: 'hello', role: 'controller', pid, name }); };
+    ws.onmessage = (ev) => {
+      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      switch (m.t) {
+        case 'welcome':
+          connected = true;
+          status.textContent = '已連線'; status.className = 'on';
+          $('#who').textContent = `#${m.num} ${m.name}`;
+          $('#dot').style.background = m.color;
+          document.documentElement.style.setProperty('--accent', m.color);
+          break;
+        case 'ping': send({ t: 'pong', s: m.s, c: Date.now() }); break;
+        case 'haptic': vibrate(m.ms || 60); break;
+        case 'holster': setHolster(m.ok); break;
+        case 'zone': {
+          const h = $('#zoneHint');
+          if (m.game && m.comingSoon) h.innerHTML = `<span class="zone">${m.name}</span> 還沒開放，敬請期待`;
+          else if (m.game) h.innerHTML = `你站在 <span class="zone">${m.name}</span> 區，等其他人進來就開始`;
+          else h.textContent = '用下面的按鍵在大螢幕上跑跳，走進遊戲區就會開始';
+          if (m.game) vibrate(25);
+          break;
+        }
+        case 'misfire': { const el = $('#misfire'); el.classList.remove('on'); void el.offsetWidth; el.classList.add('on'); vibrate([30, 40, 30]); break; }
+        case 'game': showScreen(m); break;
+      }
+    };
+    ws.onclose = () => { connected = false; status.textContent = '斷線，重連中…'; status.className = ''; setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 5000); };
+    ws.onerror = () => { try { ws.close(); } catch (e) {} };
+  }
+
+  // ---- screens ----
+  const SCREENS = ['lobby', 'spectate', 'intro', 'holster', 'wait', 'fire', 'result'];
+  function setHolster(ok) {
+    $('#holsterCheck').textContent = ok ? '✓ 已就位，等對手' : '尚未就位';
+    $('#holsterCheck').classList.toggle('ok', ok);
+    $('#holsterIcon').classList.toggle('holstered', ok);
+    if (ok) vibrate(30);
+  }
+  function showScreen(m) {
+    screen = m.screen;
+    for (const s of SCREENS) $('#s-' + s).classList.toggle('hidden', s !== m.screen);
+    $('#controls').classList.toggle('hidden', m.screen !== 'lobby');
+    if (m.screen !== 'lobby') { held.clear(); sendMove(); }
+    $('#misfire').classList.remove('on');
+    if (m.opponentColor) document.documentElement.style.setProperty('--opp', m.opponentColor);
+    switch (m.screen) {
+      case 'spectate':
+        $('#spA').textContent = m.a; $('#spB').textContent = m.b;
+        $('#spQueue').textContent = `${m.game || ''} 進行中。結束後走進遊戲區就能挑戰冠軍`;
+        held.clear();
+        break;
+      case 'intro': $('#introRound').textContent = m.round; $('#introOpp').textContent = m.opponent; vibrate([60, 60, 60]); break;
+      case 'holster': setHolster(!!m.ok); break;
+      case 'wait': break;
+      case 'fire': vibrate(200); break;
+      case 'result': {
+        const el = $('#s-result');
+        el.classList.remove('win', 'lose', 'draw'); el.classList.add(m.outcome);
+        const title = { win: '你贏了！', lose: '你輸了', draw: '平手' }[m.outcome];
+        $('#resTitle').textContent = title;
+        const why = {
+          falsestart: m.outcome === 'lose' ? (m.by === 'raise' ? '你在槍聲前就舉起來了' : '你在槍聲前就開槍了') : '對手搶跑',
+          shot: m.outcome === 'win' ? '你先開槍' : (m.myReaction != null ? '對手比你快' : '你沒開槍'),
+          timeout: '沒人開槍，再來一次',
+          left: '對手離線',
+          holster: m.outcome === 'win' ? '對手沒就位' : (m.outcome === 'lose' ? '你沒就位' : '兩位都沒就位'),
+        }[m.reason] || '';
+        $('#resReason').textContent = why;
+        $('#resMine').innerHTML = m.myReaction != null ? `${m.myReaction}<small> ms</small>` : '-';
+        $('#resTheirs').innerHTML = m.theirReaction != null ? `${m.theirReaction}<small> ms</small>` : '-';
+        $('#resOppName').textContent = m.opponent;
+        $('#resWins').textContent = `你目前 ${m.wins} 勝`;
+        vibrate(m.outcome === 'win' ? [80, 60, 80, 60, 160] : 300);
+        break;
+      }
+    }
+  }
+
+  // Tapping anywhere during wait/fire is the trigger. Also allowed on holster (counts as a false start) so cheating is punished.
+  for (const id of ['s-holster', 's-wait', 's-fire']) {
+    $('#' + id).addEventListener('pointerdown', (ev) => { ev.preventDefault(); shoot(); });
+  }
+  function shoot() { send({ t: 'shot', ts: Date.now(), beta: latest.beta }); vibrate(20); }
+
+  // ---- sensors ----
+  function onOrientation(e) {
+    if (e.beta == null) return;
+    latest.alpha = e.alpha; latest.beta = e.beta; latest.gamma = e.gamma;
+    dirty = true;
+  }
+  function onMotion(e) {
+    const a = e.acceleration;
+    if (!a || a.x == null) return;
+    latest.ax = a.x; latest.ay = a.y; latest.az = a.z;
+    dirty = true;
+  }
+  async function requestSensors() {
+    if (SIM) return;
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+      const r = await DeviceMotionEvent.requestPermission();
+      if (r !== 'granted') throw new Error('動作感測器權限被拒絕');
+    }
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      const r = await DeviceOrientationEvent.requestPermission();
+      if (r !== 'granted') throw new Error('方向感測器權限被拒絕');
+    }
+    if (!window.isSecureContext) throw new Error('不是安全來源（需要 https），感測器無法使用');
+    window.addEventListener('deviceorientation', onOrientation);
+    window.addEventListener('devicemotion', onMotion);
+  }
+
+  // Send at most ~30 Hz, only when something changed.
+  setInterval(() => {
+    if (!dirty || !connected) return;
+    dirty = false;
+    send({ t: 'motion', ts: Date.now(), alpha: latest.alpha, beta: latest.beta, gamma: latest.gamma, ax: latest.ax, ay: latest.ay, az: latest.az });
+    const mag = latest.ax == null ? 0 : Math.hypot(latest.ax, latest.ay, latest.az);
+    if (SIM) $('#raw').textContent = `β ${fmt(latest.beta)} γ ${fmt(latest.gamma)} | a ${mag.toFixed(1)}`;
+  }, 33);
+  function fmt(v) { return v == null ? '-' : v.toFixed(0); }
+
+  // local rough direction readout for the lobby screen
+  let neutral = null;
+  setInterval(() => {
+    if (latest.beta == null) return;
+    if (!neutral) neutral = { beta: latest.beta, gamma: latest.gamma };
+    const x = (latest.gamma - neutral.gamma) / 40, y = (neutral.beta - latest.beta) / 40;
+    let d = 'CENTER';
+    if (Math.abs(x) >= 0.25 || Math.abs(y) >= 0.25) d = Math.abs(x) >= Math.abs(y) ? (x > 0 ? 'RIGHT' : 'LEFT') : (y > 0 ? 'UP' : 'DOWN');
+    $('#dir').textContent = d;
+  }, 50);
+  $('#calib').addEventListener('click', () => { neutral = null; send({ t: 'calib' }); });
+
+  // ---- wake lock ----
+  let wakeLock = null;
+  async function keepAwake() {
+    try {
+      if ('wakeLock' in navigator) {
+        wakeLock = await navigator.wakeLock.request('screen');
+        document.addEventListener('visibilitychange', async () => {
+          if (document.visibilityState === 'visible' && wakeLock && wakeLock.released) wakeLock = await navigator.wakeLock.request('screen');
+        });
+      }
+    } catch (e) {}
+  }
+
+  // ---- lobby emoji keyboard ----
+  const EMOJIS = ['😂', '🔥', '👋', '😱', '🎉', '💩', '❤️', '👑'];
+  for (const e of EMOJIS) {
+    const b = document.createElement('button');
+    b.textContent = e;
+    b.addEventListener('pointerdown', (ev) => {
+      ev.preventDefault();
+      send({ t: 'emoji', e });
+      vibrate(15);
+      b.classList.add('pop'); setTimeout(() => b.classList.remove('pop'), 120);
+    });
+    $('#emoji').appendChild(b);
+  }
+  // ---- lobby movement: hold ◀ / ▶, tap 跳. Each button tracks its own pointer so two thumbs work at once. ----
+  const held = new Set();
+  function sendMove() { const dir = held.has(1) ? (held.has(-1) ? 0 : 1) : held.has(-1) ? -1 : 0; send({ t: 'move', dir }); }
+  for (const el of document.querySelectorAll('.mv')) {
+    const dir = Number(el.dataset.dir);
+    const down = (ev) => { ev.preventDefault(); el.setPointerCapture && el.setPointerCapture(ev.pointerId); el.classList.add('down'); held.add(dir); sendMove(); };
+    const up = (ev) => { ev.preventDefault(); el.classList.remove('down'); held.delete(dir); sendMove(); };
+    el.addEventListener('pointerdown', down);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  }
+  const jumpBtn = $('#jump');
+  jumpBtn.addEventListener('pointerdown', (ev) => { ev.preventDefault(); jumpBtn.classList.add('down'); send({ t: 'jump' }); vibrate(20); });
+  jumpBtn.addEventListener('pointerup', () => jumpBtn.classList.remove('down'));
+  jumpBtn.addEventListener('pointercancel', () => jumpBtn.classList.remove('down'));
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { held.clear(); sendMove(); } });
+  // left-handed option: jump on the left, ◀ ▶ on the right
+  let swap = false;
+  try { swap = localStorage.getItem('swap') === '1'; } catch (e) {}
+  const applySwap = () => { $('#controls').classList.toggle('swap', swap); $('#swap').textContent = swap ? '⇄ 左右手互換（跳在左）' : '⇄ 左右手互換'; };
+  $('#swap').addEventListener('click', () => { swap = !swap; try { localStorage.setItem('swap', swap ? '1' : '0'); } catch (e) {} applySwap(); });
+  applySwap();
+  if (SIM) {
+    document.addEventListener('keydown', (e) => {
+      const i = '12345678'.indexOf(e.key); if (i >= 0) send({ t: 'emoji', e: EMOJIS[i] });
+      if (e.key === 'ArrowUp' && !e.repeat) send({ t: 'jump' });
+      if (e.key === 'ArrowLeft' && !e.repeat) { held.add(-1); sendMove(); }
+      if (e.key === 'ArrowRight' && !e.repeat) { held.add(1); sendMove(); }
+    });
+    document.addEventListener('keyup', (e) => {
+      if (e.key === 'ArrowLeft') { held.delete(-1); sendMove(); }
+      if (e.key === 'ArrowRight') { held.delete(1); sendMove(); }
+    });
+  }
+
+  // ---- keyboard simulator for testing on a PC (open /c?sim) ----
+  if (SIM) {
+    $('#sim').classList.remove('hidden');
+    latest.alpha = 0; latest.beta = 45; latest.gamma = 0; latest.ax = 0; latest.ay = 0; latest.az = 0;
+    const show = () => { $('#simState').textContent = `β=${latest.beta.toFixed(0)} γ=${latest.gamma.toFixed(0)}`; dirty = true; };
+    setInterval(() => { dirty = true; }, 100); // keep streaming even when idle
+    document.addEventListener('keydown', (e) => {
+      if (e.repeat) return;
+      switch (e.key) {
+        case 'h': case 'H': latest.beta = -80; break;
+        case 'r': case 'R': latest.beta = 0; break;
+        case ' ': e.preventDefault(); shoot(); break;
+        case 'ArrowDown': latest.beta = 80; break;
+        case 's': case 'S': latest.ax = 20; latest.ay = 6; latest.az = 2; dirty = true; setTimeout(() => { latest.ax = 0; latest.ay = 0; latest.az = 0; dirty = true; }, 120); break;
+      }
+      show();
+    });
+    document.addEventListener('keyup', (e) => {
+      if (e.key === 'ArrowDown') { if (latest.beta !== -80) latest.beta = 45; show(); }
+    });
+    show();
+  }
+
+  // ---- join ----
+  $('#joinBtn').addEventListener('click', async () => {
+    err.textContent = '';
+    try { await requestSensors(); } catch (e) { err.textContent = e.message || String(e); return; }
+    keepAwake();
+    try { if (!SIM && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen(); } catch (e) {}
+    // no orientation lock: landscape is the comfortable grip for the lobby controls
+    $('#join').classList.add('hidden');
+    $('#top').classList.remove('hidden');
+    $('#s-lobby').classList.remove('hidden');
+    $('#controls').classList.remove('hidden');
+    connect();
+  });
+})();
+</script>
+</body>
+</html>

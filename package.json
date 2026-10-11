@@ -1,0 +1,17 @@
+{
+  "name": "motion-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Phone-as-controller motion demo: phones send sensor data over WebSocket, PC shows classified input",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/duel.test.js",
+    "bot": "node test/bot.js"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4",
+    "selfsigned": "^2.4.1",
+    "ws": "^8.18.0"
+  }
+}

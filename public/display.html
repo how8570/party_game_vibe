@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quick Draw</title>
+<style>
+  :root { --bg: #0e0e10; --panel: #18181c; --fg: #f2f2f2; --muted: #8a8a92; --accent: #ffd740; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans TC", sans-serif; overflow: hidden; }
+  button { font: inherit; cursor: pointer; }
+  .hidden { display: none !important; }
+  .scene { position: fixed; inset: 0; }
+
+  /* ---------- top bar ---------- */
+  #bar { position: fixed; top: 0; left: 0; right: 0; height: 44px; display: flex; align-items: center; gap: 16px; padding: 0 16px; font-size: 13px; color: var(--muted); z-index: 10; pointer-events: none; }
+  #bar b { color: var(--fg); font-weight: 600; }
+  #bar .sp { flex: 1; }
+  #conn.off { color: #ff5252; }
+
+  /* ---------- lobby: the map fills the screen, everything else floats on top ---------- */
+  #lobby { display: block; }
+  .arena { position: absolute; inset: 0; background: #121216; overflow: hidden; }
+  .arena canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .join { position: absolute; top: 56px; left: 20px; width: 232px; background: rgba(24,24,28,0.88); backdrop-filter: blur(8px); border: 1px solid #2a2a32; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; z-index: 2; }
+  .join img { width: 170px; height: 170px; background: #fff; border-radius: 10px; padding: 6px; }
+  .join h1 { font-size: 17px; margin: 0; }
+  .join .url { font-family: ui-monospace, Consolas, monospace; font-size: 13px; color: #40c4ff; word-break: break-all; }
+  .join .hint { color: var(--muted); font-size: 11px; line-height: 1.5; }
+  .roster { position: absolute; inset: 0; pointer-events: none; }
+  .roster h2 { position: absolute; top: 56px; right: 20px; margin: 0; font-size: 18px; display: flex; align-items: baseline; gap: 12px; z-index: 2; text-shadow: 0 2px 8px rgba(0,0,0,0.8); }
+  .roster h2 span { color: #c9c3e6; font-size: 14px; font-weight: 400; }
+  .roster h2 .tip { font-size: 12px; }
+  .actions { position: absolute; left: 20px; bottom: 20px; display: flex; gap: 12px; align-items: center; z-index: 2; pointer-events: auto; }
+  .primary { font-size: 20px; font-weight: 800; padding: 14px 30px; border-radius: 14px; border: 0; background: var(--accent); color: #000; box-shadow: 0 6px 24px rgba(0,0,0,0.5); }
+  .primary:disabled { background: #2a2a30; color: #666; cursor: default; }
+  .ghost { font-size: 14px; padding: 10px 16px; border-radius: 10px; border: 1px solid #444; background: rgba(0,0,0,0.5); color: #ccc; }
+  .msg { color: #ffd1a8; font-size: 14px; text-shadow: 0 2px 8px rgba(0,0,0,0.8); }
+
+  /* ---------- duel ---------- */
+  #duel { display: grid; grid-template-columns: 1fr 1fr; }
+  .side { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 40px; position: relative; transition: background 200ms; }
+  .side.left { background: linear-gradient(90deg, color-mix(in srgb, var(--c) 18%, transparent), transparent); }
+  .side.right { background: linear-gradient(270deg, color-mix(in srgb, var(--c) 18%, transparent), transparent); }
+  .side .pname { font-size: 56px; font-weight: 900; color: var(--c); line-height: 1; text-align: center; }
+  .side .wins { font-size: 18px; color: var(--muted); }
+  .side .status { font-size: 24px; min-height: 32px; color: var(--muted); text-align: center; }
+  .side .status.ok { color: #69f0ae; }
+  .side .react { font-size: 72px; font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; min-height: 80px; }
+  .side .react small { font-size: 24px; color: var(--muted); font-weight: 600; }
+  .side.winner { background: color-mix(in srgb, var(--c) 35%, transparent); }
+  .side.loser { opacity: 0.45; }
+  .gun { width: 140px; height: 140px; transition: transform 150ms; }
+  .gun svg { width: 100%; height: 100%; }
+  .side.right .gun { transform: scaleX(-1); }
+  .gun.holstered { transform: rotate(80deg); }
+  .side.right .gun.holstered { transform: scaleX(-1) rotate(80deg); }
+  #center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; text-align: center; gap: 10px; }
+  #center .big { font-size: 64px; font-weight: 900; letter-spacing: 2px; text-shadow: 0 4px 30px rgba(0,0,0,0.6); }
+  #center .sub { font-size: 22px; color: var(--muted); }
+  #center .round { position: absolute; top: 56px; font-size: 16px; color: var(--muted); letter-spacing: 3px; }
+  #center .vs { font-size: 40px; font-weight: 900; color: #444; }
+  #flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 20; }
+  #flash.on { animation: flash 500ms ease-out; }
+  @keyframes flash { 0% { opacity: 1; } 100% { opacity: 0; } }
+  #fireword { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 180px; font-weight: 900; color: #ff5252; letter-spacing: 8px; pointer-events: none; z-index: 21; opacity: 0; text-shadow: 0 0 60px #ff5252; }
+  #fireword.on { animation: fireword 900ms ease-out; }
+  @keyframes fireword { 0% { opacity: 1; transform: scale(1.6); } 60% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1); } }
+  .duelbar { position: fixed; bottom: 0; left: 0; right: 0; height: 64px; display: flex; align-items: center; gap: 14px; padding: 0 20px; background: linear-gradient(transparent, rgba(0,0,0,0.6)); font-size: 14px; color: var(--muted); }
+  .duelbar .queue { display: flex; gap: 8px; align-items: center; flex: 1; overflow: hidden; }
+  .duelbar .q { padding: 4px 10px; border-radius: 8px; border: 1px solid var(--c); color: var(--c); white-space: nowrap; }
+  .duelbar .q.first { background: var(--c); color: #000; }
+  .pulse { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+  /* ---------- debug overlay ---------- */
+  #debug { position: fixed; inset: 44px 0 0 0; background: rgba(10,10,12,0.96); z-index: 30; overflow: auto; padding: 16px; display: grid; grid-template-columns: 1fr 300px; gap: 16px; }
+  #cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; align-content: start; }
+  .card { background: var(--panel); border-radius: 14px; padding: 14px; border: 2px solid var(--c, #444); display: grid; grid-template-columns: 150px 1fr; gap: 12px; }
+  .card.off { opacity: 0.4; filter: grayscale(1); }
+  .card .title { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; }
+  .card .title .num { background: var(--c); color: #000; border-radius: 6px; padding: 1px 8px; font-size: 14px; }
+  .card .title .hz { margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
+  .card canvas { width: 150px; height: 150px; display: block; background: #0b0b0d; border-radius: 10px; }
+  .card .info { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .card .dir { font-size: 30px; font-weight: 800; letter-spacing: 1px; line-height: 1; }
+  .card .gesture { font-size: 22px; font-weight: 800; color: #ffd740; min-height: 26px; }
+  .card .gesture.flashg { animation: pop 0.7s ease-out; }
+  @keyframes pop { 0% { transform: scale(1.6); opacity: 1; } 100% { transform: scale(1); opacity: 0.9; } }
+  .bars { display: grid; grid-template-columns: 14px 1fr; gap: 4px 6px; align-items: center; font-size: 11px; color: var(--muted); font-family: ui-monospace, Consolas, monospace; }
+  .bar { height: 8px; background: #222; border-radius: 4px; position: relative; overflow: hidden; }
+  .bar i { position: absolute; top: 0; bottom: 0; left: 50%; background: var(--c); }
+  .bar.mag i { left: 0; background: #ffd740; }
+  .btns { display: flex; gap: 8px; margin-top: 2px; }
+  .btn { width: 36px; height: 36px; border-radius: 8px; border: 2px solid #333; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #666; }
+  .btn.down { background: var(--c); color: #000; border-color: var(--c); }
+  .raw { grid-column: 1 / -1; font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--muted); white-space: pre; }
+  aside h2 { font-size: 13px; color: var(--muted); margin: 0 0 8px; text-transform: uppercase; letter-spacing: 1px; }
+  .ev { padding: 6px 8px; border-radius: 6px; margin-bottom: 4px; background: #141418; display: flex; gap: 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .ev .t { color: #555; }
+  .ev .p { font-weight: 700; }
+</style>
+</head>
+<body>
+
+<div id="bar">
+  <b>Quick Draw</b>
+  <span id="conn">連線中…</span>
+  <span id="count"></span>
+  <span class="sp"></span>
+  <span>快捷鍵：<b>Enter</b> 開始 · <b>Esc</b> 結束 · <b>D</b> 輸入檢視</span>
+</div>
+
+<!-- ---------- LOBBY ---------- -->
+<section id="lobby" class="scene">
+  <div class="arena"><canvas id="arena"></canvas></div>
+  <div class="join">
+    <h1>用手機掃描加入</h1>
+    <img id="qr" src="/qr.svg" alt="QR">
+    <div class="url" id="url">…</div>
+    <div class="hint">手機與這台電腦連同一個 Wi-Fi。第一次開啟會看到憑證警告，選「進階 → 繼續前往」。</div>
+  </div>
+  <div class="roster">
+    <h2>大廳 <span id="rosterCount">0 位在線</span><span class="tip">手機橫拿 ◀ ▶ 跑、「跳」跳 · 走進遊戲區就開始</span></h2>
+    <div class="actions">
+      <button id="startBtn" class="primary" disabled>開始對決</button>
+      <button id="resetBtn" class="ghost">清除離線玩家</button>
+      <span class="msg" id="lobbyMsg"></span>
+    </div>
+  </div>
+</section>
+
+<!-- ---------- DUEL ---------- -->
+<section id="duel" class="scene hidden">
+  <div class="side left" id="sideA">
+    <div class="gun" id="gunA"></div>
+    <div class="pname"></div>
+    <div class="wins"></div>
+    <div class="status"></div>
+    <div class="react"></div>
+  </div>
+  <div class="side right" id="sideB">
+    <div class="gun" id="gunB"></div>
+    <div class="pname"></div>
+    <div class="wins"></div>
+    <div class="status"></div>
+    <div class="react"></div>
+  </div>
+  <div id="center">
+    <div class="round" id="round"></div>
+    <div class="vs" id="vs">VS</div>
+    <div class="big" id="big"></div>
+    <div class="sub" id="sub"></div>
+  </div>
+  <div class="duelbar">
+    <div class="queue" id="queue"></div>
+    <button id="skipBtn" class="ghost">跳過這場</button>
+    <button id="stopBtn" class="ghost">結束回大廳</button>
+  </div>
+</section>
+<div id="flash"></div>
+<div id="fireword">FIRE!</div>
+
+<!-- ---------- DEBUG OVERLAY ---------- -->
+<section id="debug" class="hidden">
+  <div id="cards"></div>
+  <aside><h2>事件</h2><div id="events"></div></aside>
+</section>
+
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  let state = { players: [], game: { mode: 'lobby', duel: null, queue: [] } };
+  let ws, backoff = 500;
+
+  // ---------- audio (synthesized, unlocked by the first click/keypress) ----------
+  let ac = null;
+  function audio() { if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } if (ac && ac.state === 'suspended') ac.resume(); return ac; }
+  function tone(freq, dur, type = 'sine', gain = 0.2, when = 0) {
+    const c = audio(); if (!c) return;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(gain, c.currentTime + when);
+    g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + when + dur);
+    o.connect(g).connect(c.destination);
+    o.start(c.currentTime + when); o.stop(c.currentTime + when + dur + 0.05);
+  }
+  function gunshot() {
+    const c = audio(); if (!c) return;
+    const len = 0.35, buf = c.createBuffer(1, c.sampleRate * len, c.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3);
+    const src = c.createBufferSource(); src.buffer = buf;
+    const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1800;
+    const g = c.createGain(); g.gain.value = 0.9;
+    src.connect(f).connect(g).connect(c.destination); src.start();
+    tone(70, 0.4, 'square', 0.3);
+  }
+  const sfx = {
+    intro: () => { tone(330, 0.12, 'triangle', 0.25); tone(440, 0.12, 'triangle', 0.25, 0.15); },
+    holstered: () => tone(880, 0.08, 'sine', 0.15),
+    ready: () => tone(220, 0.5, 'sine', 0.12),
+    fire: () => gunshot(),
+    win: () => { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, 'triangle', 0.22, i * 0.11)); },
+    fail: () => { tone(200, 0.3, 'sawtooth', 0.15); tone(150, 0.4, 'sawtooth', 0.15, 0.2); },
+  };
+  document.addEventListener('pointerdown', audio, { once: true });
+  document.addEventListener('keydown', audio, { once: true });
+
+  // ---------- websocket ----------
+  function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+  function cmd(c) { send({ t: 'cmd', cmd: c }); }
+  function connect() {
+    ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
+    ws.onopen = () => { backoff = 500; send({ t: 'hello', role: 'display' }); $('#conn').textContent = '已連線'; $('#conn').className = ''; };
+    ws.onmessage = (ev) => {
+      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.t === 'state') { state = m; if (m.joinUrl) $('#url').textContent = m.joinUrl; }
+      else if (m.t === 'event') logEvent(m);
+      else if (m.t === 'fire') onFire();
+    };
+    ws.onclose = () => { $('#conn').textContent = '斷線，重連中…'; $('#conn').className = 'off'; setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 5000); };
+    ws.onerror = () => { try { ws.close(); } catch (e) {} };
+  }
+  connect();
+
+  // ---------- controls ----------
+  $('#startBtn').addEventListener('click', () => cmd('start'));
+  $('#resetBtn').addEventListener('click', () => cmd('reset'));
+  $('#stopBtn').addEventListener('click', () => cmd('stop'));
+  $('#skipBtn').addEventListener('click', () => cmd('skip'));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && state.game.mode === 'lobby') cmd('start');
+    else if (e.key === 'Escape' && state.game.mode !== 'lobby') cmd('stop');
+    else if (e.key === 'd' || e.key === 'D') $('#debug').classList.toggle('hidden');
+  });
+
+  // ---------- fire moment ----------
+  function onFire() {
+    sfx.fire();
+    const f = $('#flash'), w = $('#fireword');
+    f.classList.remove('on'); w.classList.remove('on'); void f.offsetWidth;
+    f.classList.add('on'); w.classList.add('on');
+  }
+
+  // ---------- rendering ----------
+  const GUN_SVG = `<svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"><path d="M8 38 H78 a6 6 0 0 1 6 6 v6 a6 6 0 0 1 -6 6 H46 l-6 26 H24 l6 -26 h-8 a6 6 0 0 1 -6 -6 v-4"/><path d="M36 56 l6 10"/><circle cx="18" cy="44" r="2" fill="currentColor"/></svg>`;
+  $('#gunA').innerHTML = GUN_SVG; $('#gunB').innerHTML = GUN_SVG;
+
+  // Lobby playground: 2D platformer. The server integrates physics; we interpolate and draw.
+  const arena = $('#arena'), actx = arena.getContext('2d');
+  const smooth = new Map(); // pid -> interpolated {x, y}
+  const stars = Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.random() * 0.7, r: Math.random() * 1.4 + 0.4, tw: Math.random() * 6 }));
+  function hills(ctx, W, groundY, amp, freq, phase, color, height) {
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.moveTo(0, groundY);
+    for (let x = 0; x <= W; x += 8) ctx.lineTo(x, groundY - height - Math.sin(x * freq + phase) * amp - Math.sin(x * freq * 2.7 + phase * 1.3) * amp * 0.4);
+    ctx.lineTo(W, groundY); ctx.closePath(); ctx.fill();
+  }
+  function renderLobby() {
+    const ps = state.players;
+    const world = state.world || { w: 16, h: 9, platforms: [{ x: 0, y: 0, w: 16 }] };
+    const box = arena.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.max(1, Math.round(box.width)), H = Math.max(1, Math.round(box.height));
+    if (arena.width !== W * dpr || arena.height !== H * dpr) { arena.width = W * dpr; arena.height = H * dpr; }
+    actx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const now = Date.now(), t = now / 1000;
+    const groundPad = 90;   // room for the ground slab and the action buttons
+    const scale = Math.min(W / world.w, (H - groundPad - 90) / world.h);
+    const ox = (W - world.w * scale) / 2, groundY = H - groundPad;
+    const px = (x) => ox + x * scale, py = (y) => groundY - y * scale;
+
+    // sky
+    const sky = actx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, '#0b0f2a'); sky.addColorStop(0.6, '#1a1540'); sky.addColorStop(1, '#2d1b4e');
+    actx.fillStyle = sky; actx.fillRect(0, 0, W, H);
+    for (const s of stars) {
+      actx.globalAlpha = 0.5 + 0.5 * Math.sin(t * 1.5 + s.tw);
+      actx.fillStyle = '#fff'; actx.beginPath(); actx.arc(s.x * W, s.y * H, s.r, 0, Math.PI * 2); actx.fill();
+    }
+    actx.globalAlpha = 1;
+    // moon
+    actx.fillStyle = '#f5e6b8'; actx.beginPath(); actx.arc(W * 0.82, H * 0.16, 26, 0, Math.PI * 2); actx.fill();
+    actx.fillStyle = '#1a1540'; actx.beginPath(); actx.arc(W * 0.82 - 10, H * 0.16 - 6, 22, 0, Math.PI * 2); actx.fill();
+    // parallax hills (2.5D depth)
+    hills(actx, W, groundY, 26, 0.006, t * 0.05, '#221a4d', 150);
+    hills(actx, W, groundY, 34, 0.01, 1.7 + t * 0.09, '#2b2160', 90);
+    hills(actx, W, groundY, 20, 0.018, 3.1 + t * 0.14, '#352a70', 40);
+
+    // platforms with a lit top face and a dark front face
+    const thick = 0.42 * scale;
+    for (const pl of world.platforms) {
+      const x = px(pl.x), y = py(pl.y), w = pl.w * scale;
+      const isGround = pl.y === 0 && pl.w >= world.w;
+      actx.fillStyle = isGround ? '#3b2d63' : '#4a3a7a';
+      actx.beginPath(); actx.roundRect(isGround ? 0 : x, y, isGround ? W : w, isGround ? groundPad + 2 : thick, isGround ? 0 : 8); actx.fill();
+      actx.fillStyle = isGround ? '#8e78d0' : '#a08ae0';
+      actx.beginPath(); actx.roundRect(x, y, w, 7, isGround ? 0 : [8, 8, 0, 0]); actx.fill();
+      if (!isGround) { actx.fillStyle = 'rgba(0,0,0,0.25)'; actx.fillRect(x + 6, y + thick, w - 12, 6); }
+    }
+
+    // game zones on the ground
+    for (const g of state.game.games || []) {
+      const x0 = px(g.zone.x0), x1 = px(g.zone.x1), gy = py(0);
+      const col = g.comingSoon ? '#6b6b7a' : '#ffd740';
+      const glow = actx.createLinearGradient(0, gy - 60, 0, gy);
+      glow.addColorStop(0, 'rgba(255,215,64,0)'); glow.addColorStop(1, g.comingSoon ? 'rgba(120,120,140,0.18)' : 'rgba(255,215,64,0.28)');
+      actx.fillStyle = glow; actx.fillRect(x0, gy - 60, x1 - x0, 60);
+      actx.fillStyle = col; actx.fillRect(x0, gy, x1 - x0, 7);
+      // posts
+      for (const x of [x0, x1]) { actx.fillStyle = col; actx.fillRect(x - 3, gy - 44, 6, 44); actx.beginPath(); actx.arc(x, gy - 46, 6, 0, Math.PI * 2); actx.fill(); }
+      // label
+      actx.textAlign = 'center'; actx.textBaseline = 'bottom';
+      actx.font = '900 18px system-ui, "Noto Sans TC", sans-serif'; actx.fillStyle = col;
+      actx.fillText(g.name, (x0 + x1) / 2, gy - 58);
+      actx.font = '600 12px system-ui, "Noto Sans TC", sans-serif'; actx.fillStyle = g.comingSoon ? '#8a8a9a' : '#fff';
+      let sub;
+      if (g.comingSoon) sub = '即將推出';
+      else if (g.countdown != null) sub = `${Math.ceil(g.countdown / 1000)} 秒後開始 · ${g.occupants.length}/${g.max}`;
+      else if (g.occupants.length === 0) sub = g.min === 2 && g.max === 2 ? '走進來 1 對 1' : `走進來，${g.min} 人以上開始`;
+      else sub = `${g.occupants.length}/${g.min} 人 · 還差 ${Math.max(0, g.min - g.occupants.length)} 位`;
+      actx.fillText(sub, (x0 + x1) / 2, gy - 42);
+      // hold progress of whoever is standing inside
+      if (!g.comingSoon && g.occupants.length) {
+        const prog = Math.min(...g.occupants.map((o) => o.progress));
+        actx.fillStyle = 'rgba(255,255,255,0.15)'; actx.fillRect(x0 + 10, gy - 36, x1 - x0 - 20, 4);
+        actx.fillStyle = col; actx.fillRect(x0 + 10, gy - 36, (x1 - x0 - 20) * prog, 4);
+      }
+    }
+
+    const seen = new Set();
+    const sorted = [...ps].filter((p) => p.connected).sort((a, b) => a.pos.x - b.pos.x);
+    const bw = 0.8 * scale, bh = 1.0 * scale;
+    for (const p of sorted) {
+      seen.add(p.pid);
+      let s = smooth.get(p.pid);
+      if (!s) { s = { x: p.pos.x, y: p.pos.y }; smooth.set(p.pid, s); }
+      s.x += (p.pos.x - s.x) * 0.5; s.y += (p.pos.y - s.y) * 0.5;
+      const x = px(s.x), feet = py(s.y);
+      // squash on landing, stretch while rising
+      let sx = 1, sy = 1;
+      const land = (now - p.landedAt) / 180;
+      if (land >= 0 && land < 1) { const k = Math.sin(land * Math.PI); sx = 1 + 0.3 * k; sy = 1 - 0.3 * k; }
+      else if (!p.onGround && p.vel.y > 3) { sx = 0.88; sy = 1.14; }
+      // drop shadow on the surface below
+      let shadowY = py(0);
+      for (const pl of world.platforms) if (s.x >= pl.x - 0.3 && s.x <= pl.x + pl.w + 0.3 && pl.y <= s.y + 0.01 && py(pl.y) < shadowY) shadowY = py(pl.y);
+      const height = Math.max(0, shadowY - feet);
+      actx.fillStyle = `rgba(0,0,0,${0.35 * Math.max(0.2, 1 - height / 300)})`;
+      actx.beginPath(); actx.ellipse(x, shadowY + 3, bw * 0.55 * Math.max(0.5, 1 - height / 400), 5, 0, 0, Math.PI * 2); actx.fill();
+      // body
+      actx.save();
+      actx.translate(x, feet); actx.scale(sx, sy);
+      actx.fillStyle = p.color;
+      actx.beginPath(); actx.roundRect(-bw / 2, -bh, bw, bh, bw * 0.45); actx.fill();
+      // feet
+      actx.fillStyle = 'rgba(0,0,0,0.35)';
+      const step = p.onGround && Math.abs(p.vel.x) > 0.5 ? Math.sin(t * 18) * 4 : 0;
+      actx.beginPath(); actx.roundRect(-bw * 0.4, -5 + step, bw * 0.32, 6, 3); actx.fill();
+      actx.beginPath(); actx.roundRect(bw * 0.08, -5 - step, bw * 0.32, 6, 3); actx.fill();
+      // eyes facing the run direction
+      const f = p.facing || 1;
+      actx.fillStyle = '#fff';
+      actx.beginPath(); actx.arc(f * 4 - 7, -bh * 0.68, 5, 0, Math.PI * 2); actx.fill();
+      actx.beginPath(); actx.arc(f * 4 + 7, -bh * 0.68, 5, 0, Math.PI * 2); actx.fill();
+      actx.fillStyle = '#111';
+      actx.beginPath(); actx.arc(f * 6 - 7, -bh * 0.68, 2.6, 0, Math.PI * 2); actx.fill();
+      actx.beginPath(); actx.arc(f * 6 + 7, -bh * 0.68, 2.6, 0, Math.PI * 2); actx.fill();
+      // crown for the current champion
+      if (state.game.champion === p.pid) {
+        actx.fillStyle = '#ffd740';
+        actx.beginPath(); actx.moveTo(-10, -bh - 2); actx.lineTo(-10, -bh - 14); actx.lineTo(-4, -bh - 7); actx.lineTo(0, -bh - 16); actx.lineTo(4, -bh - 7); actx.lineTo(10, -bh - 14); actx.lineTo(10, -bh - 2); actx.closePath(); actx.fill();
+      }
+      actx.restore();
+      // name above head
+      const top = feet - bh * sy;
+      actx.font = '700 14px system-ui, "Noto Sans TC", sans-serif'; actx.textAlign = 'center'; actx.textBaseline = 'bottom';
+      actx.fillStyle = 'rgba(0,0,0,0.5)'; actx.fillText(p.name, x + 1, top - 7 - (state.game.champion === p.pid ? 14 : 0) + 1);
+      actx.fillStyle = '#fff'; actx.fillText(p.name, x, top - 7 - (state.game.champion === p.pid ? 14 : 0));
+      // emoji bubble
+      if (p.emoji) {
+        const age = now - p.emoji.at, life = 2500;
+        const a = age < 150 ? age / 150 : age > life - 400 ? Math.max(0, (life - age) / 400) : 1;
+        const pop = age < 150 ? 0.6 + 0.4 * (age / 150) : 1;
+        actx.save(); actx.globalAlpha = a;
+        actx.translate(x, top - 62 - (state.game.champion === p.pid ? 14 : 0)); actx.scale(pop, pop);
+        actx.fillStyle = '#fff';
+        actx.beginPath(); actx.roundRect(-28, -28, 56, 52, 14); actx.fill();
+        actx.beginPath(); actx.moveTo(-8, 24); actx.lineTo(8, 24); actx.lineTo(0, 34); actx.closePath(); actx.fill();
+        actx.font = '34px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif'; actx.textAlign = 'center'; actx.textBaseline = 'middle'; actx.fillStyle = '#000';
+        actx.fillText(p.emoji.e, 0, 1);
+        actx.restore();
+      }
+    }
+    for (const pid of smooth.keys()) if (!seen.has(pid)) smooth.delete(pid);
+    if (!sorted.length) {
+      actx.font = '600 20px system-ui, "Noto Sans TC", sans-serif'; actx.textAlign = 'center'; actx.textBaseline = 'middle'; actx.fillStyle = '#8f86b8';
+      actx.fillText('還沒有人。掃左邊的 QR code 進來', W / 2, H * 0.45);
+    }
+    const online = sorted.length;
+    $('#rosterCount').textContent = `${online} 位在線`;
+    $('#startBtn').disabled = online < 2;
+    $('#lobbyMsg').textContent = state.game.message || (online < 2 ? '至少需要兩位玩家' : '兩人走進右邊的擂台就會自動開打，Enter 可以直接開始');
+  }
+
+  const PHASE_TEXT = {
+    intro: ['', '準備對決'],
+    holster: ['把手機垂在身側', '像槍收在槍套裡。兩人都就位後開始'],
+    wait: ['', '等待槍聲…別動'],
+    fire: ['', '開槍！'],
+  };
+  let lastPhaseKey = '';
+  function renderDuel() {
+    const d = state.game.duel;
+    if (!d) return;
+    const sides = [[$('#sideA'), d.a], [$('#sideB'), d.b]];
+    const r = d.result;
+    for (const [el, p] of sides) {
+      el.style.setProperty('--c', p.color);
+      el.querySelector('.pname').textContent = p.name;
+      el.querySelector('.wins').textContent = `${p.wins} 勝${p.connected ? '' : ' · 離線'}`;
+      const st = el.querySelector('.status'), re = el.querySelector('.react'), gun = el.querySelector('.gun');
+      gun.style.color = p.color;
+      el.classList.remove('winner', 'loser');
+      st.className = 'status';
+      if (d.phase === 'intro') { st.textContent = ''; re.textContent = ''; gun.classList.remove('holstered'); }
+      else if (d.phase === 'holster') { st.textContent = p.holstered ? '✓ 已就位' : '請垂下手機'; if (p.holstered) st.classList.add('ok'); re.textContent = ''; gun.classList.toggle('holstered', p.holstered); }
+      else if (d.phase === 'wait') { st.textContent = ''; re.textContent = ''; gun.classList.add('holstered'); }
+      else if (d.phase === 'fire') { st.textContent = ''; gun.classList.remove('holstered'); re.innerHTML = p.reaction != null ? `${p.reaction}<small> ms</small>` : ''; }
+      else if (d.phase === 'result' && r) {
+        gun.classList.remove('holstered');
+        const isWinner = r.winner === p.pid, isLoser = r.loser === p.pid;
+        if (isWinner) el.classList.add('winner'); else if (isLoser || (r.winner && !isWinner)) el.classList.add('loser');
+        re.innerHTML = p.reaction != null ? `${p.reaction}<small> ms</small>` : '';
+        if (r.reason === 'falsestart' && isLoser) { st.textContent = '搶跑！'; }
+        else if (r.reason === 'holster' && isLoser) st.textContent = '沒就位';
+        else if (r.reason === 'left' && !isWinner) st.textContent = '離線';
+        else if (r.reason === 'shot' && isLoser) st.textContent = p.reaction != null ? '慢了' : '沒開槍';
+        else if (isWinner) { st.textContent = 'WINNER'; st.classList.add('ok'); }
+        else st.textContent = '';
+      }
+    }
+    $('#round').textContent = `ROUND ${d.round}`;
+    const [big, sub] = PHASE_TEXT[d.phase] || ['', ''];
+    $('#big').textContent = big; $('#sub').textContent = sub;
+    $('#big').classList.toggle('pulse', d.phase === 'wait');
+    $('#vs').classList.toggle('hidden', d.phase !== 'intro');
+    if (d.phase === 'wait') { $('#big').textContent = '• • •'; }
+    if (d.phase === 'result' && r) {
+      const w = r.winner ? (d.a.pid === r.winner ? d.a : d.b) : null;
+      $('#big').textContent = w ? `${w.name} 勝！` : '平手';
+      const REASON = { shot: '先開槍', falsestart: '對手搶跑', timeout: '沒人開槍，再來一次', left: '對手離線', holster: '對手沒就位' };
+      $('#sub').textContent = REASON[r.reason] || '';
+      if (!w && r.reason === 'holster') $('#sub').textContent = '兩位都沒就位，再來一次';
+    }
+    // footer: what happens next
+    const champ = state.players.find((p) => p.pid === state.game.champion);
+    $('#queue').innerHTML = `結束後回到大廳，輸家會被彈出擂台，想挑戰的人走進去就行。` + (champ ? ` 目前冠軍 <span class="q first" style="--c:${champ.color}">${champ.name}</span>` : '');
+
+    // phase-change sounds
+    const key = `${d.round}:${d.phase}:${d.a.holstered}:${d.b.holstered}`;
+    if (key !== lastPhaseKey) {
+      const prev = lastPhaseKey.split(':');
+      if (d.phase === 'intro') sfx.intro();
+      else if (d.phase === 'holster' && prev[1] === 'holster' && (d.a.holstered || d.b.holstered)) sfx.holstered();
+      else if (d.phase === 'wait') sfx.ready();
+      else if (d.phase === 'result' && r) { if (r.winner) sfx.win(); else sfx.fail(); }
+      lastPhaseKey = key;
+    }
+  }
+
+  function render() {
+    const inDuel = !!state.game.duel;
+    $('#lobby').classList.toggle('hidden', !!inDuel);
+    $('#duel').classList.toggle('hidden', !inDuel);
+    if (inDuel) renderDuel(); else { renderLobby(); lastPhaseKey = ''; }
+    $('#count').textContent = `${state.players.filter((p) => p.connected).length} 位玩家`;
+    if (!$('#debug').classList.contains('hidden')) renderDebug();
+    requestAnimationFrame(render);
+  }
+  requestAnimationFrame(render);
+
+  // ---------- debug overlay (lobby input viewer) ----------
+  const cards = new Map();
+  const lastGesture = new Map();
+  const KIND_LABEL = { join: '加入', leave: '離線', shake: 'SHAKE', button: '按下', calibrate: '校正', duel: '對決', game: '遊戲', emoji: '' };
+  function logEvent(m) {
+    const p = state.players.find((x) => x.pid === m.pid);
+    const el = document.createElement('div');
+    el.className = 'ev';
+    const t = new Date().toLocaleTimeString('en-GB');
+    el.innerHTML = `<span class="t">${t}</span><span class="p" style="color:${p ? p.color : '#aaa'}">${m.num ? '#' + m.num : ''}</span><span>${KIND_LABEL[m.kind] || m.kind} ${m.detail || ''}</span>`;
+    $('#events').prepend(el);
+    while ($('#events').children.length > 60) $('#events').lastChild.remove();
+  }
+  function makeCard(p) {
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.style.setProperty('--c', p.color);
+    el.innerHTML = `
+      <div class="title"><span class="num">#${p.num}</span><span class="name"></span><span class="hz"></span></div>
+      <canvas width="300" height="300"></canvas>
+      <div class="info">
+        <div class="dir">CENTER</div>
+        <div class="gesture"></div>
+        <div class="bars">
+          <span>x</span><div class="bar ax"><i></i></div>
+          <span>y</span><div class="bar ay"><i></i></div>
+          <span>z</span><div class="bar az"><i></i></div>
+          <span>|a|</span><div class="bar mag"><i></i></div>
+        </div>
+        <div class="btns"><div class="btn A">A</div><div class="btn B">B</div></div>
+      </div>
+      <div class="raw"></div>`;
+    $('#cards').appendChild(el);
+    const c = {
+      el, ctx: el.querySelector('canvas').getContext('2d'),
+      name: el.querySelector('.name'), hz: el.querySelector('.hz'), dir: el.querySelector('.dir'), gesture: el.querySelector('.gesture'),
+      ax: el.querySelector('.ax i'), ay: el.querySelector('.ay i'), az: el.querySelector('.az i'), mag: el.querySelector('.mag i'),
+      A: el.querySelector('.btn.A'), B: el.querySelector('.btn.B'), raw: el.querySelector('.raw'),
+    };
+    cards.set(p.pid, c);
+    return c;
+  }
+  function setBar(el, v, range) {
+    const f = Math.max(-1, Math.min(1, v / range));
+    el.style.left = f < 0 ? `${50 + f * 50}%` : '50%';
+    el.style.width = `${Math.abs(f) * 50}%`;
+  }
+  function drawPad(ctx, p) {
+    const W = 300, cx = 150, cy = 150, R = 120;
+    ctx.clearRect(0, 0, W, W);
+    ctx.strokeStyle = '#2a2a30'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, R * 0.25, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy); ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R); ctx.stroke();
+    const x = cx + p.tilt.x * R, y = cy - p.tilt.y * R;
+    ctx.strokeStyle = p.color; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(x, y); ctx.stroke();
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI * 2); ctx.fill();
+  }
+  function renderDebug() {
+    const seen = new Set();
+    for (const p of state.players) {
+      seen.add(p.pid);
+      const c = cards.get(p.pid) || makeCard(p);
+      c.el.classList.toggle('off', !p.connected);
+      c.name.textContent = p.name;
+      c.hz.textContent = p.connected ? `${p.hz} Hz · rtt ${p.rtt == null ? '?' : p.rtt} ms` : 'offline';
+      c.dir.textContent = p.tilt.dir;
+      c.dir.style.color = p.tilt.dir === 'CENTER' ? '#666' : p.color;
+      drawPad(c.ctx, p);
+      setBar(c.ax, p.accel.x, 20); setBar(c.ay, p.accel.y, 20); setBar(c.az, p.accel.z, 20);
+      c.mag.style.width = `${Math.min(1, p.accel.mag / 30) * 100}%`;
+      c.A.classList.toggle('down', p.buttons.A);
+      c.B.classList.toggle('down', p.buttons.B);
+      if (p.gesture) {
+        if (lastGesture.get(p.pid) !== p.gesture) { c.gesture.classList.remove('flashg'); void c.gesture.offsetWidth; c.gesture.classList.add('flashg'); }
+        c.gesture.textContent = p.gesture;
+      } else c.gesture.textContent = '';
+      lastGesture.set(p.pid, p.gesture);
+      c.raw.textContent = `α ${p.orient.alpha.toFixed(0).padStart(4)}  β ${p.orient.beta.toFixed(0).padStart(4)}  γ ${p.orient.gamma.toFixed(0).padStart(4)}   tilt ${p.tilt.x.toFixed(2)}, ${p.tilt.y.toFixed(2)}   |a| ${p.accel.mag.toFixed(1)}`;
+    }
+    for (const [pid, c] of cards) if (!seen.has(pid)) { c.el.remove(); cards.delete(pid); }
+  }
+})();
+</script>
+</body>
+</html>
