@@ -14,7 +14,7 @@ function check(name, cond, extra) { results.push([name, !!cond]); console.log((c
 function bot(name, { reaction = 250, behavior = 'normal', clockSkew = 0 } = {}) {
   const ws = new WebSocket(`ws://localhost:${PORT}`);
   const now = () => Date.now() + clockSkew;
-  const b = { name, ws, beta: 45, screen: 'lobby', screens: [], results: [], misfires: 0, holsterOk: null };
+  const b = { name, ws, beta: 45, screen: 'lobby', screens: [], results: [], misfires: 0, holsterOk: null, zone: null, zones: [] };
   const send = (o) => ws.readyState === 1 && ws.send(JSON.stringify(o));
   b.send = send;
   b.close = () => ws.close();
@@ -28,7 +28,7 @@ function bot(name, { reaction = 250, behavior = 'normal', clockSkew = 0 } = {}) 
     if (m.t === 'ping') return send({ t: 'pong', s: m.s, c: now() });
     if (m.t === 'misfire') { b.misfires++; return; }
     if (m.t === 'holster') { b.holsterOk = m.ok; return; }
-    if (m.t === 'zone') { b.zone = m.game; return; }
+    if (m.t === 'zone') { b.zone = m.game; b.zones.push(m.game); return; }
     if (m.t !== 'game') return;
     b.screen = m.screen; b.screens.push(m);
     if (m.screen === 'result') b.results.push(m);
@@ -73,7 +73,7 @@ async function waitFor(fn, timeout = 8000, label = '') {
 }
 
 (async () => {
-  const server = spawn(process.execPath, [path.join(proj, 'server.js')], {
+  const server = spawn(process.execPath, [path.join(proj, 'server', 'index.js')], {
     env: { ...process.env, PORT: String(PORT), HTTPS_PORT: String(HTTPS_PORT), GAME_FAST: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -124,19 +124,19 @@ async function waitFor(fn, timeout = 8000, label = '') {
       const p = disp.state.players.find((q) => q.pid === pid);
       const dx = x - p.pos.x, v = p.vel.x;
       if (Math.abs(dx) < 0.3 && Math.abs(v) < 0.3) break;
+      if (duelOf()) break; // a game started (players are frozen inside it); stop steering
       const stop = (v * v) / (2 * 14);
       const dir = Math.sign(dx) !== Math.sign(v) || Math.abs(dx) > stop + 0.1 ? Math.sign(dx) : 0;
       if (dir !== last) { b.send({ t: 'move', dir }); last = dir; }
+      if (process.env.DEBUG_WALK && (Date.now() - t0) % 300 < 30) console.log(`   walk ${pid} t=${Date.now() - t0} x=${p.pos.x.toFixed(2)} y=${p.pos.y.toFixed(2)} vx=${v.toFixed(2)} dir=${dir} screen=${b.screen} ground=${p.onGround}`);
       await sleep(30);
     }
     b.send({ t: 'move', dir: 0 });
   }
   await Promise.all([walkTo(A, 'bot_A', zone.x0 + 1.2), walkTo(C, 'bot_C', zone.x0 + 2.6)]);
-  await waitFor(() => disp.state.game.games[0].occupants.length === 2, 1500, 'zone occupancy');
-  check('both standing in the zone', disp.state.game.games[0].occupants.length === 2, JSON.stringify({ a: posOf('bot_A'), c: posOf('bot_C') }));
-  await waitFor(() => duelOf(), 3000, 'auto start');
-  check('duel auto-starts with the champion on side A and the challenger on side B', duelOf() && duelOf().a.pid === 'bot_A' && duelOf().b.pid === 'bot_C');
-  check('phones were told they are in the zone', C.zone === 'quickdraw');
+  await waitFor(() => duelOf(), 4000, 'auto start');
+  check('walking into the zone auto-starts a duel (both were inside), champion on side A, challenger on side B', duelOf() && duelOf().a.pid === 'bot_A' && duelOf().b.pid === 'bot_C', JSON.stringify({ a: posOf('bot_A'), c: posOf('bot_C') }));
+  check('phones were told they entered the zone', C.zones.includes('quickdraw') && A.zones.includes('quickdraw'));
   await waitFor(() => resultOf(), 8000, 'zone duel result');
   r = resultOf();
   check('C false-starts, A wins', r && r.winner === 'bot_A' && r.loser === 'bot_C' && r.reason === 'falsestart');

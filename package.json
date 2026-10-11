@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "Phone-as-controller motion demo: phones send sensor data over WebSocket, PC shows classified input",
-  "main": "server.js",
+  "main": "server/index.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node server/index.js",
     "test": "node test/duel.test.js",
     "bot": "node test/bot.js"
   },
