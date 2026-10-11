@@ -16,7 +16,7 @@ function loadOrCreateCert(certDir, lan) {
     { type: 7, ip: '127.0.0.1' },
     ...lan.map((l) => ({ type: 7, ip: l.address })),
   ];
-  const pems = selfsigned.generate([{ name: 'commonName', value: 'motion-demo' }], {
+  const pems = selfsigned.generate([{ name: 'commonName', value: 'partyground' }], {
     keySize: 2048, days: 3650, algorithm: 'sha256',
     extensions: [
       { name: 'basicConstraints', cA: false },

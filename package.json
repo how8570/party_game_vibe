@@ -1,8 +1,12 @@
 {
-  "name": "motion-demo",
+  "name": "party-game-vibe",
   "version": "0.1.0",
   "private": true,
-  "description": "Phone-as-controller motion demo: phones send sensor data over WebSocket, PC shows classified input",
+  "description": "Local-network party games: phones are the controllers (scan a QR code, no app), one PC is the big screen. Platformer lobby, Quick Draw, Bumper, Parkour, bots.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
@@ -13,5 +17,10 @@
     "qrcode": "^1.5.4",
     "selfsigned": "^2.4.1",
     "ws": "^8.18.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/how8570/party_game_vibe.git"
+  },
+  "homepage": "https://github.com/how8570/party_game_vibe#readme"
 }

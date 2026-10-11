@@ -1,11 +1,13 @@
-# Quick Draw — 手機當控制器的派對遊戲
+# PartyGround · party_game_vibe
 
-PC 開一個大螢幕頁面，手機掃 QR code 進來當控制器，不用裝 App。
+**Local-network party games where phones are the controllers.** One PC shows the big screen, everyone scans a QR code and plays from the browser. No app, no accounts, no internet needed.
+
+PC 開一個大螢幕頁面，手機掃 QR code 進來當控制器，不用裝 App。大廳是 2D 平台地圖，走進不同入口就開始不同遊戲。
 
 - **大廳**：2D 平台跳躍的夜景地圖。手機橫拿，◀ ▶ 跑、「跳」跳、按 emoji 冒泡泡。地圖兩端是遊戲區，走進去站滿人數就自動開始。
 - **快槍手**（1-2-Switch 式）：兩人把手機垂在身側，聽到槍聲最快舉起並點螢幕的人贏；提早動就是搶跑直接輸。贏家戴皇冠留在擂台，輸家被彈出去，下一個走進來的人接著挑戰。
 - **跑酷**：入口在大廳中央高塔的塔頂，1 到 8 人。獨立的橫向賽道（`config.js` 的 `PARKOUR.COURSE`），物理和大廳共用同一套 `stepBody`。斷崖掉下去回最近的檢查點、計時不停；先到終點的贏，沒到的依跑多遠排名，90 秒結束。大螢幕鏡頭跟著跑者群，上方有全程進度條。
-- **碰碰車**（相撲圈）：2 到 8 人，地圖左端的入口站滿 2 人後開 5 秒加入窗口。手機傾斜就是搖桿（開局倒數時的握法為中心，畫面上方有重新校正鈕），按住螢幕拖曳也可以暫時接手，右下角「衝刺」。碰撞用等質量彈性碰撞，衝刺中撞到人會多推一把。15 秒後圈開始縮小，出圈淘汰，最後站著的贏；75 秒到時離圓心最近的贏。結束後所有人被彈出入口，重新聚集才會再開。參數在 `config.js` 的 `BUMPER`。
+- **碰碰車**（相撲圈）：2 到 8 人，地圖左端的入口站滿 2 人後開 5 秒加入窗口。手機傾斜就是搖桿（開局倒數時的握法為中心，畫面上方有重新校正鈕），按住螢幕拖曳也可以暫時接手，右下角「衝刺」。碰撞是非彈性的，而且誰朝對方衝得快誰就比較重，所以撞人的人幾乎不反彈、被撞的飛出去，兩人等速對衝則對稱；衝刺中更重，撞到人會多推一把。15 秒後圈開始縮小，出圈淘汰，最後站著的贏；75 秒到時離圓心最近的贏。結束後所有人被彈出入口，重新聚集才會再開。參數在 `config.js` 的 `BUMPER`。
 
 ## 啟動
 
@@ -14,7 +16,7 @@ npm install
 npm start
 ```
 
-- PC 顯示頁：<http://localhost:8080/>（純 HTTP，不會有憑證警告）。按 **Enter** 可以直接開一場快槍手、**Esc** 結束、**D** 開啟輸入檢視。
+- PC 顯示頁：<http://localhost:8080/>（純 HTTP，不會有憑證警告）。按 **Enter** 直接開始（看大家站在哪個入口，人最多的那個遊戲立刻開；沒人站就開快槍手）、**1 / 2 / 3** 強制開快槍手 / 碰碰車 / 跑酷、**Esc** 結束、**D** 開啟輸入檢視。
 - 手機控制器：終端機與顯示頁會印出 `https://<PC 的區網 IP>:8443/c` 和 QR code。手機第一次開會看到憑證警告，選「進階 → 繼續前往」。
 - 沒手機時可在 PC 開 <http://localhost:8080/c?sim> 用鍵盤模擬：← → 跑、↑ 跳、1-8 emoji、H 垂下、R 舉起、Space 開槍、S 搖晃。
 
@@ -27,7 +29,7 @@ npm start
 ## 測試
 
 ```bash
-npm test                         # 三組整合測試，各自起一個 GAME_FAST 伺服器（18080 / 18100 / 18110）；npm test -- bumper 只跑一組
+npm test                         # 四組整合測試，各自起一個 GAME_FAST 伺服器（18080 / 18100 / 18110 / 18120）；npm test -- bumper 只跑一組
 npm run bot -- 小明 400 wander   # 假手機：名字、反應時間 ms、行為
 ```
 
@@ -45,8 +47,10 @@ server/
   players.js        加入離開、感測器判讀（傾斜、搖晃）、手機時鐘同步
   lobby.js          平台物理（60 Hz）、遊戲區偵測、emoji、把輸家彈出去
   phones.js         決定每支手機該顯示哪個畫面，只在變化時推送
+  router.js         手機訊息路由（真手機和機器人共用）
+  bots.js           伺服器端機器人：大廳跟人、快槍手、碰碰車、跑酷
   games/
-    index.js        遊戲註冊表：zone:ready 事件 → 啟動對應遊戲
+    index.js        遊戲註冊表：zone:ready 事件 → 啟動對應遊戲、主持人直接開始
     quickdraw.js    快槍手狀態機
     bumper.js       碰碰車：搖桿、碰撞、衝刺、縮圈、淘汰
     parkour.js      跑酷：賽道、檢查點、掉落、終點、排名
@@ -56,8 +60,10 @@ public/
 test/
   run.js            跑所有 *.test.js（npm test）
   harness.js        測試共用：起伺服器、假手機、假顯示頁、走路
-  duel.test.js      快槍手（24 項）、lobby.test.js 大廳與機器人（12 項）、bumper.test.js 碰碰車（21 項）、parkour.test.js 跑酷
+  duel.test.js      快槍手（24 項）、lobby.test.js 大廳與機器人（12 項）、bumper.test.js 碰碰車（21 項）、parkour.test.js 跑酷（15 項）
   bot.js            假手機
+docs/
+  HANDOFF-desk-pet.md  給另一個專案（桌寵）的交接說明
 ```
 
 **模組之間用 `state.bus` 溝通，避免互相 require**：`motion`、`shake`、`player:leave`、`player:kick`、`zone:ready`、`phones:push`。
@@ -86,9 +92,9 @@ lobby ──兩人站進擂台 1 秒──▶ intro (3.5s) ──▶ holster ─
 
 手機 → 伺服器：`hello {role:'controller', pid, name}`、`motion {ts, alpha, beta, gamma, ax, ay, az}`（約 30 Hz）、`pong {s, c}`、`move {dir: -1|0|1}`、`jump`、`emoji {e}`、`shot {ts, beta}`、`stick {x, y}`（碰碰車搖桿，-1..1）、`dash`、`calib`。核心不認得的訊息會交給進行中的遊戲模組的 `onMessage`。
 
-伺服器 → 手機：`welcome`、`ping {s}`、`game {screen, …}`（lobby / spectate / intro / holster / wait / fire / result / bumper / bumper-result）、`zone {game, name, comingSoon}`、`holster {ok}`、`misfire`、`haptic {ms}`。
+伺服器 → 手機：`welcome`、`ping {s}`、`game {screen, …}`（lobby / spectate / intro / holster / wait / fire / result / bumper / bumper-result / parkour / parkour-result）、`zone {game, name, comingSoon}`、`holster {ok}`、`misfire`、`haptic {ms}`。
 
-伺服器 → 顯示頁（30 Hz）：`state {world, players[], game:{mode, champion, games[], duel}}`，另有 `event` 與 `fire`。顯示頁 → 伺服器：`cmd {cmd:'start'|'stop'|'skip'|'reset'}`。
+伺服器 → 顯示頁（30 Hz）：`state {world, players[], game:{mode, champion, games[], duel}}`，另有 `event` 與 `fire`。顯示頁 → 伺服器：`cmd {cmd:'start'|'stop'|'skip'|'reset'|'addbot'|'removebot', game?}`。
 
 ## 為什麼手機那邊要 HTTPS
 

@@ -53,37 +53,36 @@ module.exports = {
     TIME_LIMIT_S: 90,
     FALL_Y: -3,
     START_X: 2,
-    FINISH_X: 90,
-    CHECKPOINTS: [2, 20, 45, 70],   // x positions on a surface; the first is the start (45 is on the high ground)
+    FINISH_X: 94,
+    CHECKPOINTS: [2, 20, 46, 75],   // x positions on a surface; the first is the start (46 is on the high ground)
     // Movement has no walk speed, so every required jump is checked for full speed: jump 13, gravity 30 ->
     // flat reach 5.6; landing on something h higher happens 6.5 * (13 + sqrt(169 - 60h)) / 30 ahead
     // (h = 1.5 -> 4.75, h = 2 -> 4.3); landing h lower reaches further (h = -1.5 -> 6.3, h = -4.5 -> 3.6 when stepping off).
+    // Every landing point below was computed for a runner who jumps as soon as the next obstacle is 1.1 (pit) /
+    // 1.4 (spikes) / 2.2 (step up) units ahead, and platforms are wide enough that jumping later still lands.
     COURSE: {
-      w: 94, h: 12, floor: false,
+      w: 98, h: 12, floor: false,
       platforms: [
         // ground segments (y = 0)
-        { x: 0, y: 0, w: 10 },          // start
-        { x: 14, y: 0, w: 8 },          // after a 4-pit; spikes at 17
-        { x: 29, y: 0, w: 13 },         // after the 7-pit with a stepping stone; stairs stand on this
-        { x: 55, y: 0, w: 9 },          // below the high ground; spikes at 59
-        { x: 68, y: 0, w: 8 },          // after a 4-pit; checkpoint 70
-        { x: 86, y: 0, w: 8 },          // after the long pit with a stone; finish at 90
-        // required platforms
-        { x: 25.3, y: 2.0, w: 2.2 },    // stepping stone over the 22-29 pit (landing from the 22 edge at +2 = 26.3)
-        { x: 33, y: 1.5, w: 4 },        // stairs
-        { x: 36, y: 3.0, w: 5 },
-        { x: 39, y: 4.5, w: 4 },
-        { x: 43, y: 4.5, w: 9 },        // high ground with spikes at 47; step off at 52 into the pit or run and clear it
-        { x: 79.8, y: 1.5, w: 2.2 },    // stepping stone over the 76-86 pit (landing from the 76 edge at +1.5 = 80.75)
-        // optional hops
-        { x: 17.5, y: 2.4, w: 2 },
-        { x: 60, y: 2.6, w: 2.5 },
+        { x: 0, y: 0, w: 10 },          // start; 4-pit at 10
+        { x: 14, y: 0, w: 8 },          // spikes at 17 (jump at 15.6 lands 21.2); 7-pit at 22 with a stone
+        { x: 29, y: 0, w: 13 },         // under the stairs: a missed stair drops you here, the next pit is at 42
+        { x: 57, y: 0, w: 12 },         // below the high ground (edge jump from 54 lands 61.4, stepping off lands 57.6); spikes at 63
+        { x: 73, y: 0, w: 7 },          // after a 4-pit; checkpoint 75; 10-pit at 80 with a stone
+        { x: 90, y: 0, w: 8 },          // finish at 94
+        // stepping stones (landing from the pit edge: +2 is 4.3 ahead, +1.5 is 4.75 ahead)
+        { x: 24.6, y: 2.0, w: 2.9 },    // over the 22-29 pit: jumps from 20.9..22 land at 25.2..26.3
+        { x: 83.2, y: 1.5, w: 2.8 },    // over the 80-90 pit: jumps from 78.9..80 land at 83.65..84.75
+        // stairs up to the high ground: each step is wide, so the early jump (2.2 ahead) and a late one both land
+        { x: 33, y: 1.5, w: 6 },        // jump from 30.8.. lands 35.6..
+        { x: 37.5, y: 3.0, w: 6 },      // jump from 35.6 lands 40.35
+        { x: 42, y: 4.5, w: 12 },       // high ground: jump from 40.35 lands 45.1; spikes at 48.6 (jump at 47.2 lands 52.8); edge at 54
       ],
       // spikes: standing on one counts as a fall (back to the last checkpoint)
       hazards: [
         { x: 17, y: 0, w: 1.5 },
-        { x: 47, y: 4.5, w: 1 },
-        { x: 59, y: 0, w: 1.2 },
+        { x: 48.6, y: 4.5, w: 1 },
+        { x: 63, y: 0, w: 1.2 },        // jump at 61.6 lands 67.2, before the pit at 69
       ],
     },
   },
