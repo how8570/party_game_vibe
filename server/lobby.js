@@ -97,7 +97,8 @@ function zoneTick(now) {
   for (const g of GAMES) {
     if (g.comingSoon) continue;
     const ready = zoneOccupants(g.id).filter((p) => now - p.zoneSince >= g.holdMs);
-    if (ready.length < g.min) { delete zoneCountdown[g.id]; continue; }
+    // bots never start a game among themselves
+    if (ready.length < g.min || !ready.some((p) => !p.isBot)) { delete zoneCountdown[g.id]; continue; }
     if (g.countdownMs) {
       // games that take a crowd: open a short join window once enough people are in, then start with everyone inside
       if (!zoneCountdown[g.id]) zoneCountdown[g.id] = now + g.countdownMs;

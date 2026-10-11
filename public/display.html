@@ -136,6 +136,8 @@
     <h2>大廳 <span id="rosterCount">0 位在線</span><span class="tip">手機橫拿 ◀ ▶ 跑、「跳」跳 · 走進遊戲區就開始</span></h2>
     <div class="actions">
       <button id="startBtn" class="primary" disabled>開始對決</button>
+      <button id="addBotBtn" class="ghost">＋ 機器人</button>
+      <button id="removeBotBtn" class="ghost">－ 機器人</button>
       <button id="resetBtn" class="ghost">清除離線玩家</button>
       <span class="msg" id="lobbyMsg"></span>
     </div>
@@ -260,6 +262,8 @@
   // ---------- controls ----------
   $('#startBtn').addEventListener('click', () => cmd('start'));
   $('#resetBtn').addEventListener('click', () => cmd('reset'));
+  $('#addBotBtn').addEventListener('click', () => cmd('addbot'));
+  $('#removeBotBtn').addEventListener('click', () => cmd('removebot'));
   $('#stopBtn').addEventListener('click', () => cmd('stop'));
   $('#skipBtn').addEventListener('click', () => cmd('skip'));
   document.addEventListener('keydown', (e) => {

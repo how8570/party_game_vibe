@@ -14,6 +14,8 @@ const P = require('./players');
 const lobby = require('./lobby');
 const games = require('./games');
 const phones = require('./phones');
+const { route } = require('./router');
+const bots = require('./bots');
 
 const ROOT = path.join(__dirname, '..');
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -33,6 +35,7 @@ function snapshot() {
     players: [...players.values()].sort((a, b) => a.num - b.num).map(P.publicPlayer),
     game: {
       mode: game.mode, message: game.message, champion: game.champion,
+      bots: bots.count(),
       games: lobby.publicGames(),
       ...games.publicState(),
     },
@@ -49,18 +52,7 @@ function handleController(ws, hello) {
   ws.on('message', (raw) => {
     const receivedAt = Date.now();
     let m; try { m = JSON.parse(raw); } catch (e) { return; }
-    switch (m.t) {
-      case 'motion': P.classifyMotion(p, m, receivedAt); break;
-      case 'pong': P.onPong(p, m); break;
-      case 'shot': games.onShot(p, m, receivedAt); break;
-      case 'emoji': lobby.onEmoji(p, m); break;
-      case 'jump': lobby.onJump(p, m); break;
-      case 'move': lobby.onMove(p, m); break;
-      case 'btn': P.onButton(p, m); break;
-      case 'calib': p.neutral = null; break;
-      case 'name': p.name = String(m.name || '').slice(0, 16) || p.name; break;
-      default: games.onMessage(p, m, receivedAt);
-    }
+    route(p, m, receivedAt);
   });
   ws.on('close', () => { if (P.leave(p, ws)) phones.pushPhoneScreens(); });
 }
@@ -76,6 +68,8 @@ function handleDisplay(ws) {
       case 'stop': games.stop(); break;
       case 'skip': games.skip(); break;
       case 'reset': P.forgetDisconnected(); break;
+      case 'addbot': if (bots.count() < 8) bots.addBot(); break;
+      case 'removebot': bots.removeBot(); break;
     }
   });
   ws.on('close', () => displays.delete(ws));

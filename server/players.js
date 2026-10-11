@@ -109,7 +109,7 @@ function publicPlayer(p) {
     pid: p.pid, num: p.num, name: p.name, color: p.color, connected: p.connected,
     orient: p.orient, accel: p.accel, tilt: p.tilt, buttons: p.buttons, hz: p.hz,
     gesture: now - p.gestureAt < INPUT.GESTURE_SHOW_MS ? p.gesture : null,
-    calibrated: !!p.neutral, wins: p.wins,
+    calibrated: !!p.neutral, wins: p.wins, isBot: !!p.isBot,
     rtt: p.clock ? Math.round(p.clock.rtt) : null,
     pos: p.pos, vel: p.vel, onGround: p.onGround, facing: p.facing, landedAt: p.landedAt, jumpedAt: p.jumpedAt,
     emoji: now - p.emojiAt < WORLD.EMOJI_MS ? { e: p.emoji, at: p.emojiAt } : null,
