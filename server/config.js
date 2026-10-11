@@ -53,26 +53,37 @@ module.exports = {
     TIME_LIMIT_S: 90,
     FALL_Y: -3,
     START_X: 2,
-    FINISH_X: 58,
-    CHECKPOINTS: [2, 14, 26, 47],   // x positions on the ground; the first is the start
-    // Movement has no walk/run distinction, so every gap must be clearable at full speed by jumping at the edge:
-    // airtime 0.87 s x 6.5 u/s = 5.6 units of reach on the flat. Pits are 4 wide. Raised platforms are optional.
+    FINISH_X: 90,
+    CHECKPOINTS: [2, 20, 45, 70],   // x positions on a surface; the first is the start (45 is on the high ground)
+    // Movement has no walk speed, so every required jump is checked for full speed: jump 13, gravity 30 ->
+    // flat reach 5.6; landing on something h higher happens 6.5 * (13 + sqrt(169 - 60h)) / 30 ahead
+    // (h = 1.5 -> 4.75, h = 2 -> 4.3); landing h lower reaches further (h = -1.5 -> 6.3, h = -4.5 -> 3.6 when stepping off).
     COURSE: {
-      w: 62, h: 12, floor: false,
+      w: 94, h: 12, floor: false,
       platforms: [
-        // ground segments (y = 0) with 4-wide pits between them
-        { x: 0, y: 0, w: 9 },
-        { x: 13, y: 0, w: 8 },
-        { x: 25, y: 0, w: 7 },
-        { x: 36, y: 0, w: 6 },
-        { x: 46, y: 0, w: 16 },
-        // raised platforms: scenery and an optional high road (one-way, never block the ground route)
-        { x: 15.5, y: 1.7, w: 2.5 },
-        { x: 18.5, y: 3.2, w: 2.5 },
-        { x: 27.5, y: 1.7, w: 3 },
-        { x: 39, y: 1.7, w: 2.5 },
-        { x: 50, y: 1.7, w: 3 },
-        { x: 53.5, y: 3.3, w: 3 },
+        // ground segments (y = 0)
+        { x: 0, y: 0, w: 10 },          // start
+        { x: 14, y: 0, w: 8 },          // after a 4-pit; spikes at 17
+        { x: 29, y: 0, w: 13 },         // after the 7-pit with a stepping stone; stairs stand on this
+        { x: 55, y: 0, w: 9 },          // below the high ground; spikes at 59
+        { x: 68, y: 0, w: 8 },          // after a 4-pit; checkpoint 70
+        { x: 86, y: 0, w: 8 },          // after the long pit with a stone; finish at 90
+        // required platforms
+        { x: 25.3, y: 2.0, w: 2.2 },    // stepping stone over the 22-29 pit (landing from the 22 edge at +2 = 26.3)
+        { x: 33, y: 1.5, w: 4 },        // stairs
+        { x: 36, y: 3.0, w: 5 },
+        { x: 39, y: 4.5, w: 4 },
+        { x: 43, y: 4.5, w: 9 },        // high ground with spikes at 47; step off at 52 into the pit or run and clear it
+        { x: 79.8, y: 1.5, w: 2.2 },    // stepping stone over the 76-86 pit (landing from the 76 edge at +1.5 = 80.75)
+        // optional hops
+        { x: 17.5, y: 2.4, w: 2 },
+        { x: 60, y: 2.6, w: 2.5 },
+      ],
+      // spikes: standing on one counts as a fall (back to the last checkpoint)
+      hazards: [
+        { x: 17, y: 0, w: 1.5 },
+        { x: 47, y: 4.5, w: 1 },
+        { x: 59, y: 0, w: 1.2 },
       ],
     },
   },

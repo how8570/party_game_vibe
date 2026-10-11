@@ -70,8 +70,9 @@ class Bot {
     if (!me.onGround) return;
     const ahead = me.pos.x + 1.1;
     const under = (x, y) => st.course.platforms.some((pl) => x >= pl.x && x <= pl.x + pl.w && Math.abs(pl.y - y) < 0.05);
-    const stepUp = st.course.platforms.some((pl) => pl.x > me.pos.x && pl.x < me.pos.x + 2.2 && pl.y > me.pos.y + 0.3 && pl.y <= me.pos.y + 2.6);
-    if (!under(ahead, me.pos.y) || stepUp) route(p, { t: 'jump' });
+    const stepUp = st.course.platforms.some((pl) => pl.x + pl.w > me.pos.x && pl.x < me.pos.x + 2.2 && pl.y > me.pos.y + 0.3 && pl.y <= me.pos.y + 2.6);
+    const spikes = (st.course.hazards || []).some((h) => Math.abs(h.y - me.pos.y) < 0.05 && h.x + h.w > me.pos.x && h.x < me.pos.x + 1.4);
+    if (!under(ahead, me.pos.y) || stepUp || spikes) route(p, { t: 'jump' });
   }
 
   // ---- lobby: follow humans into a zone, otherwise stroll ----

@@ -42,8 +42,9 @@ const { check, summary } = makeChecker('parkour');
   const runner = setInterval(() => {
     const me = body('bot_A');
     if (!me || me.finishedAt != null || !me.onGround) return;
-    const stepUp = course.platforms.some((pl) => pl.x > me.pos.x && pl.x < me.pos.x + 2.2 && pl.y > me.pos.y + 0.3 && pl.y <= me.pos.y + 2.6);
-    if (!under(me.pos.x + 1.1, me.pos.y) || stepUp) A.send({ t: 'jump' });
+    const stepUp = course.platforms.some((pl) => pl.x + pl.w > me.pos.x && pl.x < me.pos.x + 2.2 && pl.y > me.pos.y + 0.3 && pl.y <= me.pos.y + 2.6);
+    const spikes = (course.hazards || []).some((h) => Math.abs(h.y - me.pos.y) < 0.05 && h.x + h.w > me.pos.x && h.x < me.pos.x + 1.4);
+    if (!under(me.pos.x + 1.1, me.pos.y) || stepUp || spikes) A.send({ t: 'jump' });
   }, 40);
   await waitFor(() => body('bot_A') && body('bot_A').checkpoint >= 1, 20000, 'checkpoint 1');
   check('A reached the first checkpoint', body('bot_A').checkpoint >= 1 && events.some((e) => e.t === 'parkour:checkpoint' && e.pid === 'bot_A'));

@@ -650,7 +650,7 @@
   // ---------- parkour (side-scrolling course, camera follows the pack) ----------
   const course = $('#course'), cctx = course.getContext('2d');
   const pkSmooth = new Map();
-  let pkCam = null, parkourResultKey = '';
+  let pkCam = null, pkScale = null, parkourResultKey = '';
   $('#pskipBtn').addEventListener('click', () => cmd('skip'));
   $('#pstopBtn').addEventListener('click', () => cmd('stop'));
   function renderParkour() {
@@ -661,12 +661,16 @@
     if (course.width !== W * dpr || course.height !== H * dpr) { course.width = W * dpr; course.height = H * dpr; }
     cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const now = Date.now(), t = now / 1000;
-    const scale = (H - 160) / k.course.h;            // world units -> px
-    const viewW = W / scale;
-    // camera: centre of the runners still on the course, clamped to the course
+    // camera: frame every runner still on the course. Zoom out as they spread, up to the whole course.
     const running = k.bodies.filter((b) => b.finishedAt == null);
-    const focus = running.length ? running.reduce((s, b) => s + b.pos.x, 0) / running.length : k.finishX;
-    const target = Math.max(viewW / 2, Math.min(k.course.w - viewW / 2, focus));
+    const xs = running.length ? running.map((b) => b.pos.x) : [k.finishX];
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const maxScale = (H - 160) / k.course.h, minScale = (W - 40) / k.course.w;
+    const wantScale = Math.max(minScale, Math.min(maxScale, (W - 160) / (maxX - minX + 14)));
+    pkScale = pkScale == null ? wantScale : pkScale + (wantScale - pkScale) * 0.06;
+    const scale = pkScale;
+    const viewW = W / scale;
+    const target = Math.max(viewW / 2, Math.min(k.course.w - viewW / 2, (minX + maxX) / 2));
     pkCam = pkCam == null ? target : pkCam + (target - pkCam) * 0.08;
     const groundY = H - 110;
     const px = (x) => (x - pkCam + viewW / 2) * scale, py = (y) => groundY - y * scale;
@@ -695,6 +699,14 @@
       cctx.beginPath(); cctx.roundRect(x, y, w, isGround ? H - y : thick, isGround ? [6, 6, 0, 0] : 8); cctx.fill();
       cctx.fillStyle = isGround ? '#8e78d0' : '#a08ae0';
       cctx.beginPath(); cctx.roundRect(x, y, w, 7, isGround ? [6, 6, 0, 0] : [8, 8, 0, 0]); cctx.fill();
+    }
+    // spikes
+    for (const h of k.course.hazards || []) {
+      const x = px(h.x), y = py(h.y), w = h.w * scale;
+      if (x + w < -20 || x > W + 20) continue;
+      const n = Math.max(2, Math.round(h.w / 0.35)), sw = w / n;
+      cctx.fillStyle = '#ff5252';
+      for (let i = 0; i < n; i++) { cctx.beginPath(); cctx.moveTo(x + i * sw, y); cctx.lineTo(x + (i + 0.5) * sw, y - 0.55 * scale); cctx.lineTo(x + (i + 1) * sw, y); cctx.closePath(); cctx.fill(); }
     }
     // checkpoints (flags) and the finish line
     for (let i = 1; i < k.checkpoints.length; i++) {
@@ -784,7 +796,7 @@
     if (inDuel) renderDuel();
     else if (inBumper) renderBumper();
     else if (inParkour) renderParkour();
-    else { renderLobby(); lastPhaseKey = ''; bumperResultKey = ''; parkourResultKey = ''; pkCam = null; trails.clear(); bumps.length = 0; }
+    else { renderLobby(); lastPhaseKey = ''; bumperResultKey = ''; parkourResultKey = ''; pkCam = null; pkScale = null; trails.clear(); bumps.length = 0; }
     $('#count').textContent = `${state.players.filter((p) => p.connected).length} 位玩家`;
     if (!$('#debug').classList.contains('hidden')) renderDebug();
     requestAnimationFrame(render);

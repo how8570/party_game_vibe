@@ -114,8 +114,9 @@ function tick() {
     for (let i = C.CHECKPOINTS.length - 1; i > b.checkpoint; i--) {
       if (b.onGround && b.pos.x >= C.CHECKPOINTS[i]) { b.checkpoint = i; send(p.ws, { t: 'haptic', ms: 60 }); broadcastDisplays({ t: 'parkour:checkpoint', pid: b.pid, index: i }); break; }
     }
-    // fell into a pit
-    if (b.pos.y < C.FALL_Y) {
+    // fell into a pit, or stepped on spikes
+    const onSpikes = b.onGround && (C.COURSE.hazards || []).some((h) => Math.abs(b.pos.y - h.y) < 0.05 && b.pos.x >= h.x && b.pos.x <= h.x + h.w);
+    if (b.pos.y < C.FALL_Y || onSpikes) {
       b.falls++;
       b.pos.x = C.CHECKPOINTS[b.checkpoint]; b.pos.y = surfaceAt(b.pos.x); b.vel.x = 0; b.vel.y = 0; b.onGround = true;
       b.respawnAt = now + 500;
