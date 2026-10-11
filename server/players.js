@@ -123,7 +123,9 @@ function join(ws, hello) {
   let p = players.get(pid);
   if (!p) { p = newPlayer(pid, String(hello.name || '').slice(0, 16)); players.set(pid, p); }
   else { p.connected = true; if (hello.name) p.name = String(hello.name).slice(0, 16); }
-  if (p.ws && p.ws !== ws) { try { p.ws.close(); } catch (e) { /* ignore */ } }
+  // Same player id from a second page (another tab, a restored tab): the new one takes over, and the old page is told
+  // to stop reconnecting. Without this the two pages keep kicking each other out forever.
+  if (p.ws && p.ws !== ws) { try { send(p.ws, { t: 'replaced' }); p.ws.close(); } catch (e) { /* ignore */ } }
   p.ws = ws;
   p.neutral = null;
   p.screen = null;

@@ -222,7 +222,7 @@
   if (!pid) { pid = 'p_' + Math.random().toString(36).slice(2, 10); try { localStorage.setItem('pid', pid); } catch (e) {} }
 
   const SIM = new URLSearchParams(location.search).has('sim');
-  let ws = null, connected = false, backoff = 500;
+  let ws = null, connected = false, backoff = 500, replaced = false;
   const latest = { alpha: null, beta: null, gamma: null, ax: null, ay: null, az: null };
   let dirty = false;
   let screen = 'lobby';
@@ -257,9 +257,21 @@
         }
         case 'misfire': { const el = $('#misfire'); el.classList.remove('on'); void el.offsetWidth; el.classList.add('on'); vibrate([30, 40, 30]); break; }
         case 'game': showScreen(m); break;
+        case 'replaced':
+          // another page on this phone took over this player: stay quiet instead of fighting it for the slot
+          replaced = true;
+          status.textContent = '已在另一個分頁連線，請關閉這個分頁';
+          status.className = '';
+          break;
       }
     };
-    ws.onclose = () => { connected = false; status.textContent = '斷線，重連中…'; status.className = ''; setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 5000); };
+    ws.onclose = (ev) => {
+      if (ev.target !== ws) return;           // an older socket closing must not spawn a second reconnect loop
+      connected = false;
+      if (replaced) return;
+      status.textContent = '斷線，重連中…'; status.className = '';
+      setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 5000);
+    };
     ws.onerror = () => { try { ws.close(); } catch (e) {} };
   }
 
