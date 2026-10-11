@@ -395,22 +395,75 @@
     });
     $('#emoji').appendChild(b);
   }
-  // ---- lobby movement: hold ◀ / ▶, tap 跳. Each button tracks its own pointer so two thumbs work at once. ----
-  const held = new Set();
-  function sendMove() { const dir = held.has(1) ? (held.has(-1) ? 0 : 1) : held.has(-1) ? -1 : 0; send({ t: 'move', dir }); }
-  for (const el of document.querySelectorAll('.mv')) {
-    const dir = Number(el.dataset.dir);
-    const down = (ev) => { ev.preventDefault(); el.setPointerCapture && el.setPointerCapture(ev.pointerId); el.classList.add('down'); held.add(dir); sendMove(); };
-    const up = (ev) => { ev.preventDefault(); el.classList.remove('down'); held.delete(dir); sendMove(); };
-    el.addEventListener('pointerdown', down);
-    el.addEventListener('pointerup', up);
-    el.addEventListener('pointercancel', up);
+  // ---- lobby movement: a D-pad that follows the thumb, and a jump button ----
+  // Touch events (not pointer events): on phones a second finger can make the browser cancel the first
+  // pointer, and pointer capture keeps a sliding thumb glued to the button it started on. Here every finger
+  // is tracked by id, the pad direction is wherever the thumb currently is, and sliding ◀ ↔ ▶ just works.
+  const held = new Set();          // keyboard (sim) directions
+  const padTouches = new Map();    // touch id -> dir
+  let padDir = 0;
+  const padEl = $('#controls .pad'), jumpBtn = $('#jump');
+  const mvBtns = { '-1': $('.mv[data-dir="-1"]'), '1': $('.mv[data-dir="1"]') };
+  function currentDir() {
+    let dir = 0;
+    for (const d of padTouches.values()) dir = d;            // the most recent finger wins
+    if (!dir) dir = held.has(1) ? (held.has(-1) ? 0 : 1) : held.has(-1) ? -1 : 0;
+    return dir;
   }
-  const jumpBtn = $('#jump');
-  jumpBtn.addEventListener('pointerdown', (ev) => { ev.preventDefault(); jumpBtn.classList.add('down'); send({ t: 'jump' }); vibrate(20); });
-  jumpBtn.addEventListener('pointerup', () => jumpBtn.classList.remove('down'));
-  jumpBtn.addEventListener('pointercancel', () => jumpBtn.classList.remove('down'));
-  document.addEventListener('visibilitychange', () => { if (document.hidden) { held.clear(); sendMove(); } });
+  function sendMove() {
+    const dir = currentDir();
+    mvBtns['-1'].classList.toggle('down', dir === -1);
+    mvBtns['1'].classList.toggle('down', dir === 1);
+    if (dir !== padDir) { padDir = dir; send({ t: 'move', dir }); }
+  }
+  function padDirAt(x) {
+    const r = padEl.getBoundingClientRect();
+    const c = r.left + r.width / 2, dead = r.width * 0.06;   // tiny neutral strip in the middle
+    return x < c - dead ? -1 : x > c + dead ? 1 : 0;
+  }
+  function inRect(el, x, y, pad = 0) {
+    const r = el.getBoundingClientRect();
+    return x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad;
+  }
+  function doJump() { jumpBtn.classList.add('down'); send({ t: 'jump' }); vibrate(20); }
+  const controlsEl = $('#controls');
+  const jumpTouches = new Set();
+  controlsEl.addEventListener('touchstart', (ev) => {
+    for (const t of ev.changedTouches) {
+      if (inRect(padEl, t.clientX, t.clientY, 24)) {
+        ev.preventDefault();
+        const r = padEl.getBoundingClientRect();
+        padTouches.set(t.identifier, padDirAt(t.clientX) || (t.clientX < r.left + r.width / 2 ? -1 : 1));
+        sendMove();
+      } else if (inRect(jumpBtn, t.clientX, t.clientY, 16)) {
+        ev.preventDefault();
+        jumpTouches.add(t.identifier);
+        doJump();
+      }
+    }
+  }, { passive: false });
+  controlsEl.addEventListener('touchmove', (ev) => {
+    for (const t of ev.changedTouches) {
+      if (padTouches.has(t.identifier)) { ev.preventDefault(); const d = padDirAt(t.clientX); if (d) padTouches.set(t.identifier, d); sendMove(); }
+    }
+  }, { passive: false });
+  const endTouch = (ev) => {
+    for (const t of ev.changedTouches) {
+      if (padTouches.delete(t.identifier)) sendMove();
+      if (jumpTouches.delete(t.identifier) && !jumpTouches.size) jumpBtn.classList.remove('down');
+    }
+  };
+  controlsEl.addEventListener('touchend', endTouch);
+  controlsEl.addEventListener('touchcancel', endTouch);
+  // mouse (PC testing): same behaviour with a single pointer
+  controlsEl.addEventListener('pointerdown', (ev) => {
+    if (ev.pointerType === 'touch') return;
+    if (inRect(padEl, ev.clientX, ev.clientY, 24)) { padTouches.set('mouse', padDirAt(ev.clientX) || -1); sendMove(); }
+    else if (inRect(jumpBtn, ev.clientX, ev.clientY, 16)) { doJump(); setTimeout(() => jumpBtn.classList.remove('down'), 120); }
+  });
+  document.addEventListener('pointermove', (ev) => { if (ev.pointerType !== 'touch' && padTouches.has('mouse')) { const d = padDirAt(ev.clientX); if (d) padTouches.set('mouse', d); sendMove(); } });
+  document.addEventListener('pointerup', (ev) => { if (ev.pointerType !== 'touch' && padTouches.delete('mouse')) sendMove(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { held.clear(); padTouches.clear(); sendMove(); } });
   // left-handed option: jump on the left, ◀ ▶ on the right
   let swap = false;
   try { swap = localStorage.getItem('swap') === '1'; } catch (e) {}
@@ -462,30 +515,43 @@
     stickId = null; stickOrigin = null; stickBase.classList.remove('on');
     if (stick.x || stick.y) { setStick(0, 0); send({ t: 'stick', x: 0, y: 0 }); stickDirty = false; }
   }
-  stickArea.addEventListener('pointerdown', (ev) => {
+  // Same idea as the lobby pad: track fingers by id with touch events so steering and dashing can overlap.
+  function stickStart(id, x, y) {
     if (stickId != null) return;
-    ev.preventDefault();
-    stickId = ev.pointerId; stickOrigin = { x: ev.clientX, y: ev.clientY };
-    stickBase.style.left = ev.clientX + 'px'; stickBase.style.top = ev.clientY + 'px'; stickBase.classList.add('on');
+    stickId = id; stickOrigin = { x, y };
+    stickBase.style.left = x + 'px'; stickBase.style.top = y + 'px'; stickBase.classList.add('on');
     $('#stickHint').classList.add('hidden');
-    try { stickArea.setPointerCapture(ev.pointerId); } catch (e) {}
     setStick(0, 0);
-  });
-  stickArea.addEventListener('pointermove', (ev) => {
-    if (ev.pointerId !== stickId) return;
-    let dx = (ev.clientX - stickOrigin.x) / STICK_R, dy = (ev.clientY - stickOrigin.y) / STICK_R;
+  }
+  function stickMove(id, x, y) {
+    if (id !== stickId) return;
+    let dx = (x - stickOrigin.x) / STICK_R, dy = (y - stickOrigin.y) / STICK_R;
     const l = Math.hypot(dx, dy);
     if (l > 1) { dx /= l; dy /= l; }
     setStick(dx, dy);
-  });
-  for (const t of ['pointerup', 'pointercancel']) stickArea.addEventListener(t, (ev) => { if (ev.pointerId === stickId) stickRelease(); });
-  setInterval(() => { if (stickDirty && Date.now() - lastStickSend >= 33) { send({ t: 'stick', x: stick.x, y: stick.y }); lastStickSend = Date.now(); stickDirty = false; } }, 16);
+  }
   const dashBtn = $('#dash');
-  dashBtn.addEventListener('pointerdown', (ev) => {
-    ev.preventDefault(); ev.stopPropagation();
-    send({ t: 'dash' }); vibrate(20);
-    dashBtn.classList.add('cool'); setTimeout(() => dashBtn.classList.remove('cool'), 1400);
+  function doDash() { send({ t: 'dash' }); vibrate(20); dashBtn.classList.add('cool'); setTimeout(() => dashBtn.classList.remove('cool'), 1400); }
+  const bumperEl = $('#s-bumper');
+  bumperEl.addEventListener('touchstart', (ev) => {
+    ev.preventDefault();
+    for (const t of ev.changedTouches) {
+      if (inRect(dashBtn, t.clientX, t.clientY, 12)) doDash();
+      else stickStart(t.identifier, t.clientX, t.clientY);
+    }
+  }, { passive: false });
+  bumperEl.addEventListener('touchmove', (ev) => { ev.preventDefault(); for (const t of ev.changedTouches) stickMove(t.identifier, t.clientX, t.clientY); }, { passive: false });
+  const stickEnd = (ev) => { for (const t of ev.changedTouches) if (t.identifier === stickId) stickRelease(); };
+  bumperEl.addEventListener('touchend', stickEnd);
+  bumperEl.addEventListener('touchcancel', stickEnd);
+  // mouse (PC testing)
+  bumperEl.addEventListener('pointerdown', (ev) => {
+    if (ev.pointerType === 'touch') return;
+    if (inRect(dashBtn, ev.clientX, ev.clientY, 12)) doDash(); else stickStart('mouse', ev.clientX, ev.clientY);
   });
+  document.addEventListener('pointermove', (ev) => { if (ev.pointerType !== 'touch') stickMove('mouse', ev.clientX, ev.clientY); });
+  document.addEventListener('pointerup', (ev) => { if (ev.pointerType !== 'touch' && stickId === 'mouse') stickRelease(); });
+  setInterval(() => { if (stickDirty && Date.now() - lastStickSend >= 33) { send({ t: 'stick', x: stick.x, y: stick.y }); lastStickSend = Date.now(); stickDirty = false; } }, 16);
   if (SIM) {
     const simKeys = new Set();
     const simStick = () => {
