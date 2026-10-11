@@ -94,6 +94,7 @@
   .stickBase.on { display: block; }
   .stickKnob { position: absolute; left: 50%; top: 50%; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%; background: var(--accent); box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
   .stickHint { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); text-align: center; color: #555; font-size: 16px; pointer-events: none; }
+  .tiltCalib { position: fixed; top: max(84px, calc(env(safe-area-inset-top) + 72px)); left: 50%; transform: translateX(-50%); z-index: 4; }
   .dash { position: fixed; right: max(18px, env(safe-area-inset-right)); bottom: max(22px, env(safe-area-inset-bottom)); width: 118px; height: 118px; border-radius: 50%; border: 0; background: #ff6e40; color: #000; font-size: 26px; font-weight: 900; box-shadow: 0 4px 16px rgba(0,0,0,0.5); z-index: 4; }
   .dash:active, .dash.down { filter: brightness(0.8); transform: scale(0.95); }
   .dash.cool { background: #5a3a30; color: #a88; }
@@ -184,8 +185,9 @@
   <div class="bstatus" id="bumperStatus">準備…</div>
   <div class="stickArea" id="stickArea">
     <div class="stickBase" id="stickBase"><div class="stickKnob" id="stickKnob"></div></div>
-    <div class="stickHint" id="stickHint">按住螢幕任何地方拖曳來移動</div>
+    <div class="stickHint" id="stickHint">傾斜手機移動，也可以按住螢幕拖曳</div>
   </div>
+  <button id="tiltCalib" class="small tiltCalib">⟲ 以現在的握法為中心</button>
   <button id="dash" class="dash">衝刺</button>
 </div>
 <!-- parkour: same run/jump controls as the lobby, status on top -->
@@ -309,7 +311,8 @@
         $('#bumperStatus').textContent = m.phase === 'ready' ? `${m.players} 人混戰，準備…` : m.alive ? '推人出圈！最後站著的人贏' : '你出圈了，看別人打';
         $('#stickHint').classList.toggle('hidden', m.phase !== 'ready' && !m.alive ? true : false);
         $('#dash').classList.toggle('hidden', !m.alive);
-        if (m.phase === 'ready') vibrate([60, 60, 60]);
+        $('#tiltCalib').classList.toggle('hidden', SIM || !m.alive);
+        if (m.phase === 'ready') { tiltNeutral = null; vibrate([60, 60, 60]); } // the grip at the countdown becomes "centre"
         break;
       case 'bumper-result': {
         const el = $('#s-bumper-result');
@@ -588,6 +591,32 @@
   document.addEventListener('pointermove', (ev) => { if (ev.pointerType !== 'touch') stickMove('mouse', ev.clientX, ev.clientY); });
   document.addEventListener('pointerup', (ev) => { if (ev.pointerType !== 'touch' && stickId === 'mouse') stickRelease(); });
   setInterval(() => { if (stickDirty && Date.now() - lastStickSend >= 33) { send({ t: 'stick', x: stick.x, y: stick.y }); lastStickSend = Date.now(); stickDirty = false; } }, 16);
+
+  // ---- bumper: tilt steering. The grip at the start of a round (or when you tap the calibrate button) is "centre";
+  // tilt forward/back/left/right from there to drive. A finger on the screen overrides tilt while it is down. ----
+  const TILT_RANGE = 28;           // degrees of tilt for full stick deflection
+  const TILT_DEAD = 0.08;
+  let tiltNeutral = null;
+  function calibrateTilt() { tiltNeutral = latest.beta == null ? null : { beta: latest.beta, gamma: latest.gamma }; }
+  $('#tiltCalib').addEventListener('click', (ev) => { ev.stopPropagation(); calibrateTilt(); vibrate(30); });
+  $('#tiltCalib').addEventListener('touchstart', (ev) => ev.stopPropagation(), { passive: true });
+  setInterval(() => {
+    if (screen !== 'bumper' || SIM || stickId != null || latest.beta == null) return;
+    if (!tiltNeutral) calibrateTilt();
+    // device-frame tilt: x = roll (gamma), y = pitch (beta); forward tilt = move up the screen = negative y
+    let dx = (latest.gamma - tiltNeutral.gamma) / TILT_RANGE, dy = (latest.beta - tiltNeutral.beta) / TILT_RANGE;
+    // rotate into the screen frame when the phone is held in landscape
+    const a = ((screen_orientation_angle() || 0) * Math.PI) / 180;
+    const x = dx * Math.cos(a) + dy * Math.sin(a), y = -dx * Math.sin(a) + dy * Math.cos(a);
+    let l = Math.hypot(x, y);
+    let sx = x, sy = y;
+    if (l < TILT_DEAD) { sx = 0; sy = 0; } else if (l > 1) { sx /= l; sy /= l; }
+    if (Math.abs(sx - stick.x) > 0.01 || Math.abs(sy - stick.y) > 0.01) setStick(sx, sy);
+    // show the tilt on the (centred) stick widget
+    stickBase.style.left = '50%'; stickBase.style.top = '45%'; stickBase.classList.add('on');
+    $('#stickHint').classList.add('hidden');
+  }, 33);
+  function screen_orientation_angle() { try { return (window.screen.orientation && window.screen.orientation.angle) || window.orientation || 0; } catch (e) { return 0; } }
   if (SIM) {
     const simKeys = new Set();
     const simStick = () => {
@@ -607,7 +636,14 @@
   // ---- join ----
   $('#joinBtn').addEventListener('click', async () => {
     err.textContent = '';
-    try { await requestSensors(); } catch (e) { err.textContent = e.message || String(e); return; }
+    // sensors are needed for Quick Draw and tilt steering; without them you can still use the buttons and the touch stick
+    try { await requestSensors(); }
+    catch (e) {
+      err.textContent = (e.message || String(e)) + '，仍可用按鍵遊玩';
+      window.addEventListener('deviceorientation', onOrientation);
+      window.addEventListener('devicemotion', onMotion);
+      await new Promise((r) => setTimeout(r, 900));
+    }
     keepAwake();
     try { if (!SIM && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen(); } catch (e) {}
     // no orientation lock: landscape is the comfortable grip for the lobby controls
