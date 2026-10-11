@@ -33,7 +33,7 @@
   /* lobby: emoji + hint on top, big thumb controls pinned to the bottom. Landscape = classic platformer grip. */
   .lobby { justify-content: flex-start; padding-top: 64px; gap: 12px; padding-bottom: 150px; }
   /* thumb controls: ◀ ▶ pair in the bottom-left corner, 跳 alone in the bottom-right. Nothing in the middle. */
-  .controls { position: fixed; inset: 0; pointer-events: none; --edge-x: max(18px, env(safe-area-inset-left)); --edge-y: max(22px, env(safe-area-inset-bottom)); }
+  .controls { position: fixed; inset: 0; pointer-events: none; z-index: 5; --edge-x: max(18px, env(safe-area-inset-left)); --edge-y: max(22px, env(safe-area-inset-bottom)); }  /* above every screen, so the buttons stay tappable in parkour too */
   .controls .pad { position: absolute; left: var(--edge-x); bottom: var(--edge-y); display: flex; gap: 14px; pointer-events: auto; }
   .controls .jump { position: absolute; right: var(--edge-x); bottom: var(--edge-y); width: 112px; height: 112px; border-radius: 50%; pointer-events: auto; font-size: 34px; }
   .controls .mv { width: 92px; height: 92px; border-radius: 50%; font-size: 34px; }
