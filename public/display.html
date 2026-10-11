@@ -120,7 +120,7 @@
   <span id="conn">連線中…</span>
   <span id="count"></span>
   <span class="sp"></span>
-  <span>快捷鍵：<b>Enter</b> 開始 · <b>Esc</b> 結束 · <b>D</b> 輸入檢視</span>
+  <span>快捷鍵：<b>Enter</b> 直接開始 · <b>Esc</b> 結束 · <b>D</b> 輸入檢視</span>
 </div>
 
 <!-- ---------- LOBBY ---------- -->
@@ -135,7 +135,7 @@
   <div class="roster">
     <h2>大廳 <span id="rosterCount">0 位在線</span><span class="tip">手機橫拿 ◀ ▶ 跑、「跳」跳 · 走進遊戲區就開始</span></h2>
     <div class="actions">
-      <button id="startBtn" class="primary" disabled>開始對決</button>
+      <button id="startBtn" class="primary" disabled>直接開始</button>
       <button id="addBotBtn" class="ghost">＋ 機器人</button>
       <button id="removeBotBtn" class="ghost">－ 機器人</button>
       <button id="resetBtn" class="ghost">清除離線玩家</button>
@@ -438,7 +438,7 @@
     const online = sorted.length;
     $('#rosterCount').textContent = `${online} 位在線`;
     $('#startBtn').disabled = online < 2;
-    $('#lobbyMsg').textContent = state.game.message || (online < 2 ? '至少需要兩位玩家' : '兩人走進右邊的擂台就會自動開打，Enter 可以直接開始');
+    $('#lobbyMsg').textContent = state.game.message || (online < 2 ? '至少需要兩位玩家' : '站進入口就會自動開始。Enter 會立刻開人最多的那個入口的遊戲，沒人站就開一場快槍手');
   }
 
   const PHASE_TEXT = {

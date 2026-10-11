@@ -52,12 +52,15 @@ function hostStart() {
   return start([a.pid, b.pid]);
 }
 
+// Host stopped the game: back to the lobby, and both duelists leave the zone so it does not restart on its own.
 function stop() {
   if (game.mode !== ID) return;
+  const pids = duel ? [duel.a, duel.b] : [];
   game.mode = 'lobby';
   game.message = '';
   game.participants = new Set();
   duel = null;
+  for (const pid of pids) bus.emit('player:kick', pid);
   bus.emit('phones:push');
   broadcastDisplays({ t: 'event', kind: 'game', detail: '回到大廳' });
 }

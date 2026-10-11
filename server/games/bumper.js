@@ -44,12 +44,15 @@ function start(pids) {
   return true;
 }
 
+// Host stopped the game: back to the lobby, everyone leaves the zone so it does not restart on its own.
 function stop() {
   if (game.mode !== ID) return;
+  const pids = [...game.participants];
   game.mode = 'lobby';
   game.message = '';
   game.participants = new Set();
   match = null;
+  for (const pid of pids) bus.emit('player:kick', pid);
   bus.emit('phones:push');
   broadcastDisplays({ t: 'event', kind: 'game', detail: '回到大廳' });
 }

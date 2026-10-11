@@ -26,7 +26,7 @@ npm start
 ## 測試
 
 ```bash
-npm test                         # 狀態機 + 擂台配對測試，會自己起一個 GAME_FAST 的伺服器在 18080
+npm test                         # 三組整合測試，各自起一個 GAME_FAST 伺服器（18080 / 18100 / 18110）；npm test -- bumper 只跑一組
 npm run bot -- 小明 400 wander   # 假手機：名字、反應時間 ms、行為
 ```
 
@@ -52,7 +52,9 @@ public/
   display.html      PC 大螢幕：大廳地圖、對決畫面、合成音效、輸入檢視（按 D）
   controller.html   手機頁：加入、大廳控制、對決各畫面、鍵盤模擬
 test/
-  duel.test.js      整合測試（25 項）
+  run.js            跑所有 *.test.js（npm test）
+  harness.js        測試共用：起伺服器、假手機、假顯示頁、走路
+  duel.test.js      快槍手（24 項）、lobby.test.js 大廳與機器人（12 項）、bumper.test.js 碰碰車（21 項）
   bot.js            假手機
 ```
 
